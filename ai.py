@@ -58,6 +58,11 @@ def _post(url, payload, headers):
     for attempt, wait in enumerate(BACKOFF, start=1):
         request = urllib.request.Request(url, data=body, method="POST")
         request.add_header("Content-Type", "application/json")
+        # 【一定要带 User-Agent】：不带的话 urllib 会自报 "Python-urllib/3.x"，
+        # Groq 前面的 Cloudflare 直接按客户端签名封掉，返回 403 error code 1010
+        # ——那个报错和 key 无关，很容易被误诊成"key 填错了"。
+        request.add_header("User-Agent", "anki-radar/1.0")
+        request.add_header("Accept", "application/json")
         for key, value in headers.items():
             request.add_header(key, value)
         try:
