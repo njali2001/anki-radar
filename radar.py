@@ -147,6 +147,11 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .tag { display: inline-block; background: #232830; border-radius: 999px; padding: 2px 10px;
        margin-right: 6px; color: #b9c0cc; }
 .hit { background: #2c3a20; color: #c7e88a; }
+/* 【来源用颜色分，不只是文字】：一眼扫过去要能分清这条是论坛的还是 Reddit 的，
+   因为两边该用的语气和该给的答案深度不一样。 */
+.src { font-weight: 600; }
+.src-forum { background: #1f3346; color: #9cc9f0; }
+.src-reddit { background: #46281f; color: #f0b79c; }
 .snippet { margin-top: 10px; color: #aeb5c0; font-size: 14.5px; white-space: pre-wrap; }
 .snippet mark, .card a.title mark { background: #3d4d24; color: #dcf5a0; border-radius: 3px;
                                     padding: 0 2px; }
@@ -176,9 +181,21 @@ def highlight(text, keywords):
     return escaped
 
 
+SOURCE_LABELS = {
+    "reddit": ("Reddit", "src-reddit"),
+    "ankiforum": ("Anki 论坛", "src-forum"),
+}
+
+
+def source_tag(row):
+    """来源标签：Reddit 还是 Anki 官方论坛。"""
+    label, css = SOURCE_LABELS.get(row.get("source") or "", (row.get("source") or "未知", "src-forum"))
+    return f'<span class="tag src {css}">{html.escape(label)}</span>'
+
+
 def where(row):
-    """来源标签。【论坛不加 r/】：那个前缀是 Reddit 的写法，套在论坛上会让人以为
-    有一个叫 forums.ankiweb.net 的版块。"""
+    """版块 / 分区。【论坛不加 r/】：那个前缀是 Reddit 的写法，套在论坛上会让人
+    以为有一个叫 forums.ankiweb.net 的版块。"""
     if row.get("source") == "reddit":
         return f"r/{row['community']}"
     return row["community"]
@@ -207,6 +224,7 @@ def render(rows, sample):
   <div class="card">
     <a class="title" href="{html.escape(row['permalink'])}" target="_blank" rel="noopener">{highlight(title, hits)}</a>
     <div class="tags">
+      {source_tag(row)}
       <span class="tag">{html.escape(where(row))}</span>
       <span class="tag">{'评论' if row['kind'] == 'comment' else '帖子'}</span>
       <span class="tag">{ago(row['posted_at'])}</span>
