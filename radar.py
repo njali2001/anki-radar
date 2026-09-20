@@ -46,8 +46,15 @@ def pattern_for(keyword):
 
     【要整词】：`anki sync` 不整词会命中一堆 URL 里的片段；而 `AnkiWeb` 这种
     本来就没歧义的词，整词与否结果一样。统一整词最省心。
+
+    【中文不能加词边界】：中文字本身算 \w，而中文写起来字和字之间没有空格，
+    所以"同步"前面只要还有一个汉字，`(?<!\w)` 就不成立——整个词永远匹配不到。
+    含非 ASCII 字符时退回子串匹配。
     """
-    return re.compile(rf"(?<!\w){re.escape(keyword.strip())}(?!\w)", re.IGNORECASE)
+    word = keyword.strip()
+    if any(ord(ch) > 127 for ch in word):
+        return re.compile(re.escape(word), re.IGNORECASE)
+    return re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
 
 
 def matches(text, patterns):
@@ -94,6 +101,55 @@ def collect(config, use_sample, only=None, progress=None):
             except sources.SourceError as exc:
                 print(f"  跳过 Anki 论坛「{keyword}」：{exc}")
 
+    bili = config.get("bilibili", {})
+    if bili.get("enabled") and only in (None, "bilibili"):
+        patterns = [(k, pattern_for(k)) for k in bili.get("keywords", []) if k.strip()]
+        pause = bili.get("pause_seconds", 3)
+        seen_videos = []
+        for keyword in bili.get("search", []):
+            if not first:
+                sources.pause(pause)
+            first = False
+            say(f"B站 搜索：{keyword}")
+            try:
+                seen_videos.extend(sources.bilibili_videos(keyword))
+            except sources.RateLimited as exc:
+                # 【和 Reddit 一样：被判异常就停】，接着请求只会被盯得更紧。
+                say("B站 判定为异常请求，这一轮到此为止")
+                if bili.get("include_videos"):
+                    items.extend(seen_videos)
+                exc.collected = items
+                raise
+            except sources.SourceError as exc:
+                print(f"  跳过 B站「{keyword}」：{exc}")
+
+        # 【默认只收评论，不收视频本身】：搜到的视频绝大多数是教程，发布时间
+        # 动辄一两年前，收进来只会把"最近有人卡住了"这件事淹掉；而同一个视频下面
+        # 的评论是新的——2026-09-20 实测，两条进榜的视频其实都是 500 多天前的教程。
+        if bili.get("include_videos"):
+            items.extend(seen_videos)
+
+        # 【只抓"标题或简介像那么回事"的视频的评论】：每个视频一次请求，
+        # 不筛的话 20 个视频就是 20 次请求，而其中大半是纯教程、没人抱怨。
+        picked, taken = [], set()
+        for video in seen_videos:
+            if video["_bvid"] in taken:
+                continue
+            if matches(f"{video['title']}\n{video['body']}", patterns):
+                taken.add(video["_bvid"])
+                picked.append(video)
+        for video in picked[: int(bili.get("max_videos_for_comments", 5))]:
+            sources.pause(pause)
+            say(f"B站 评论：{video['title'][:24]}")
+            try:
+                items.extend(sources.bilibili_comments(video["_aid"], video["_bvid"]))
+            except sources.RateLimited as exc:
+                say("B站 判定为异常请求，这一轮到此为止")
+                exc.collected = items
+                raise
+            except sources.SourceError as exc:
+                print(f"  跳过评论：{exc}")
+
     reddit_cfg = config.get("reddit_rss", {})
     if reddit_cfg.get("enabled", True) and only in (None, "reddit"):
         # 【Reddit 只走公开 RSS，而且要很克制】：.json 已经 403，.rss 还能用，
@@ -134,7 +190,15 @@ def scan(store, config, use_sample, only=None, progress=None):
     now = int(time.time())
     # 【太老的直接扔掉】：一条两周前的求助帖，要么早有人答了，要么提问的人已经
     # 放弃了。回复它没有意义，而它会把今天真正值得看的挤出报告。
-    oldest = now - config.get("max_age_days", 14) * 86400
+    # 【时间窗口按源分开】：Anki 论坛和 Reddit 每天都有新帖，两周窗口正好；
+    # 而 B站 上 Anki 是个冷门话题，同一个视频下面的评论隔几个月才来一条，
+    # 拿两周去卡等于永远是空的（2026-09-20 实测：最新一条评论是四个月前）。
+    def cutoff_for(source):
+        days = SOURCE_CONFIG_KEY.get(source)
+        days = config.get(days, {}).get("max_age_days") if days else None
+        return now - int(days or config.get("max_age_days", 14)) * 86400
+
+    cutoffs = {source: cutoff_for(source) for source in SOURCE_CONFIG_KEY}
     # 【论坛上一半的命中是系统消息和版主回复】：自动关帖通知、"我已经帮你恢复了"
     # 这类内容里照样有关键词，但它们不是求助，回复它们没有意义。
     noise = [n.lower() for n in config.get("skip_if_contains", [])]
@@ -149,7 +213,7 @@ def scan(store, config, use_sample, only=None, progress=None):
         batch, limited = getattr(exc, "collected", []), exc
     for item in batch:
         seen += 1
-        if item["created_utc"] < oldest:
+        if item["created_utc"] < cutoffs.get(item.get("source"), cutoff_for(None)):
             stale += 1
             continue
         haystack = f"{item['title']}\n{item['body']}"
@@ -308,6 +372,7 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .src { font-weight: 600; }
 .src-forum { background: #1f3346; color: #9cc9f0; }
 .src-reddit { background: #46281f; color: #f0b79c; }
+.src-bili { background: #3d2233; color: #f0a8d0; }
 .ai { background: #2a2440; color: #c3b6f0; }
 
 /* 【指示灯就是按钮本身】（2026-09-20 运营者定）：绿 = 这一轮扫过了，灰 = 还没扫。
@@ -374,9 +439,17 @@ def highlight(text, keywords):
     return escaped
 
 
+# 每个源在 config.json 里的那一段叫什么（用来取它自己的 max_age_days）。
+SOURCE_CONFIG_KEY = {
+    "ankiforum": "anki_forum",
+    "reddit": "reddit_rss",
+    "bilibili": "bilibili",
+}
+
 SOURCE_LABELS = {
     "reddit": ("Reddit", "src-reddit"),
     "ankiforum": ("Anki 论坛", "src-forum"),
+    "bilibili": ("B站", "src-bili"),
 }
 
 
@@ -518,8 +591,10 @@ def render_page(store, config, status):
     """网页版的整页。两个源各一个按钮、各一份榜单。"""
     limit = config.get("daily_limit", 5)
     sections, buttons = [], []
-    for source in ("ankiforum", "reddit"):
-        label = {"ankiforum": "Anki 论坛", "reddit": "Reddit"}[source]
+    for source in ("ankiforum", "reddit", "bilibili"):
+        if source == "bilibili" and not config.get("bilibili", {}).get("enabled"):
+            continue
+        label = SOURCE_LABELS[source][0]
         last = store.get_meta(f"last_scan_{source}")
         busy = status.get("busy") == source
         cooling = cooldown_left(store, source)

@@ -35,8 +35,11 @@ something his service could genuinely help with:
   1 = mentions syncing but is not stuck (feature talk, add-on announcement)
   0 = unrelated to syncing or size
 
-Answer with JSON only: a list of objects {"id": <id>, "score": <0-3>,
-"reason": "<at most 12 words, in Chinese>"}. No prose, no code fences.
+Posts may be in Chinese or English; judge them the same way.
+
+Answer with JSON only, in this exact shape:
+{"items": [{"id": <id>, "score": <0-3>, "reason": "<at most 12 words, in Chinese>"}]}
+No prose, no code fences.
 
 Items:
 """
@@ -81,11 +84,29 @@ def _post(url, payload, headers):
 
 
 def _extract_json(text):
-    """模型有时会裹上 ```json 之类的东西。取第一个 [ 到最后一个 ] 之间的部分。"""
+    """从模型的回答里取出那份列表。
+
+    【三重保险】：接口层面已经要求 JSON（见下面两个 asker），但小模型偶尔还是会
+    裹上 ```json、或者干脆退化成 "Id 16: 1, ..." 这种自由格式（2026-09-20 实测
+    在一批中文内容上发生过）。所以这里既认对象也认裸列表，认不出来就报错——
+    而调用方遇到报错会退回纯关键词，不会把一批乱数据当成分数写进库里。
+    """
+    text = text.strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            data = json.loads(text[start : end + 1])
+            if isinstance(data, dict) and isinstance(data.get("items"), list):
+                return data["items"]
+        except json.JSONDecodeError:
+            pass
     start, end = text.find("["), text.rfind("]")
-    if start < 0 or end < 0:
-        raise AIError(f"模型没有返回 JSON：{text[:200]}")
-    return json.loads(text[start : end + 1])
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+    raise AIError(f"模型没有返回 JSON：{text[:150]}")
 
 
 def _ask_gemini(prompt, cfg):
@@ -98,7 +119,13 @@ def _ask_gemini(prompt, cfg):
         "contents": [{"parts": [{"text": prompt}]}],
         # 【温度调到 0】：这是分类，不是创作。同样的帖子今天 3 分明天 1 分，
         # 会让人不再相信这个分数。
-        "generationConfig": {"temperature": 0, "maxOutputTokens": 2048},
+        # 【在接口层面强制 JSON】：只在提示词里写"请输出 JSON"是不够的，
+        # 模型偶尔会退化成自由格式，那一整批打分就全丢了。
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": 4096,
+            "responseMimeType": "application/json",
+        },
     }
     data = _post(url, payload, {})
     try:
@@ -114,6 +141,8 @@ def _ask_openai_compatible(prompt, cfg):
         "model": cfg.get("model", "gpt-4o-mini"),
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
+        # 同上：接口层面要求 JSON 对象（所以提示词里的形状是 {"items": [...]}）。
+        "response_format": {"type": "json_object"},
     }
     data = _post(
         f"{base}/chat/completions", payload, {"Authorization": f"Bearer {cfg['api_key']}"}

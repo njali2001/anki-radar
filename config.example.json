@@ -61,5 +61,32 @@
       "api_key": ""
     },
     "_brief": "页面上每条帖子的【写要点】按钮用的是 fallback 那家（Groq），没配 fallback 就用主用。要点只给材料，回复由人自己写。"
+  },
+  "bilibili": {
+    "_说明": "B站：搜视频 + 抓评论。真正的抱怨在评论区，视频本身多半是教程。贴吧读不到（百度挡机房 IP），所以大陆这边先做 B站。",
+    "enabled": true,
+    "search": [
+      "anki 同步",
+      "anki 同步慢",
+      "anki 同步失败",
+      "anki 自定义同步服务器"
+    ],
+    "_keywords": "从搜到的视频里挑哪些去抓评论，也用来筛评论。中文按子串匹配。",
+    "keywords": [
+      "同步",
+      "上传",
+      "传不上",
+      "失败",
+      "太慢",
+      "龟速",
+      "服务器"
+    ],
+    "max_videos_for_comments": 8,
+    "pause_seconds": 8,
+    "_include_videos": "默认只收评论。搜到的视频多半是教程，且往往是一两年前发的。",
+    "include_videos": false,
+    "_max_age_days": "B站 上 Anki 是冷门话题，评论隔几个月才来一条；用全局那个两周的窗口等于什么都收不到。",
+    "max_age_days": 180,
+    "_max_videos_for_comments": "匿名只能读到每个视频最新 3 条评论（再往下翻要登录），所以靠多看几个视频来铺开。每个视频一次请求。"
   }
 }

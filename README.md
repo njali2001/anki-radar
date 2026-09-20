@@ -19,7 +19,20 @@ US, against the FTC endorsement guidelines.
 1. Reads public sources for a small set of keywords:
    - the official Anki forum (`forums.ankiweb.net`, Discourse search JSON)
    - public subreddit feeds (`reddit.com/r/<sub>/new.rss`)
-2. Keeps whole-word keyword matches from the last N days in a local SQLite file.
+   - Bilibili (`bilibili.com`), for the Chinese-speaking side: it searches for
+     videos, then reads the **comments** under the few whose title or
+     description look relevant. The videos themselves are almost always
+     tutorials, often a year or two old; the person who cannot get a sync to
+     finish is in the comment section underneath, and that comment is recent.
+     Videos are therefore discovery only and are not stored unless you set
+     `include_videos`. An anonymous reader is served the three newest comments
+     under a video and no more, so the tool covers more videos rather than
+     paging deeper, and gives Bilibili a longer age window than the other two —
+     Anki is a niche topic there and comments arrive months apart.
+2. Keeps keyword matches from the last N days in a local SQLite file. Matching is
+   whole-word for ASCII keywords; a keyword containing non-ASCII characters is
+   matched as a substring, because written Chinese has no spaces between words
+   and a word boundary would never hold.
 3. Writes `report.html` — one card per hit with a direct link to the thread.
 4. Anything that has appeared in a report never appears in another one, so each
    run shows only what is new.
@@ -30,12 +43,17 @@ Typical volume: a handful of posts per day. This is a reading list, not a feed.
 
 - It does not post, comment, vote, message, or follow anyone.
 - It does not log in. Reddit access is anonymous (public RSS); the Anki forum is
-  read through its public search endpoint.
+  read through its public search endpoint; Bilibili's search and comment
+  endpoints are read anonymously and need no key.
 - It does not store user profiles, build audience datasets, or track individuals.
   Each row is a link, a title, a short excerpt, and which keyword matched.
 - It does not run continuously. A run is a handful of HTTP requests, with a
   mandatory pause between them (configurable, default 20s for Reddit), and is
   meant to be run a few times a day at most.
+- It does not keep knocking after a source pushes back. A rate-limited pass
+  stops there instead of moving on to the next subreddit or keyword, keeps
+  whatever it already fetched, and puts that source on a cooldown (15 minutes by
+  default, or whatever `Retry-After` asked for) during which the button is grey.
 - It has no scheduler, queue, or worker. It is one script you run by hand.
 
 ## Running it
@@ -44,10 +62,15 @@ Typical volume: a handful of posts per day. This is a reading list, not a feed.
     python radar.py --serve      same thing                   (any OS)
 
 The page runs on 127.0.0.1 and has one button per source. The Anki forum is
-scanned on startup (seconds); Reddit waits for a click, because a Reddit pass
-needs a 20-second pause between requests. Each post has **已处理 / 忽略**
-(done / ignore) buttons: what you act on disappears, what you don't is still
-there next time.
+scanned on startup (seconds); Reddit and Bilibili wait for a click, because both
+need a long pause between requests. Each post has **写要点 / 已处理 / 忽略**
+(notes / done / ignore) buttons: what you act on disappears, what you don't is
+still there next time.
+
+**写要点** asks the model for material to answer with — the facts that apply,
+what to check first, what not to claim — and not for a finished reply. The reply
+is written by a person, in their own words. Generating it costs a request, so it
+happens when you click, not for every card.
 
 One-off runs without the page:
 
@@ -73,7 +96,12 @@ any credentials.
     ai              optional. With an API key and enabled=true, keyword hits are
                     scored 0-3 for "is this person actually stuck on syncing or
                     size"; only 2+ is shown, with a one-line reason. Without a
-                    key the tool falls back to keywords alone.
+                    key the tool falls back to keywords alone. A second provider
+                    can be listed as a fallback for when the first one is busy.
+    bilibili        search terms (which videos to look at) and keywords (which
+                    of them are worth reading comments under, and which comments
+                    to keep). max_videos_for_comments caps the requests: one per
+                    video.
 
 ## Why not the Reddit API
 
@@ -86,7 +114,7 @@ rate. If API access is granted, swapping the source is a small change — but th
 ## Files
 
     radar.py            entry point: scan, filter, score, render
-    sources.py          Anki forum + Reddit RSS readers (stdlib only)
+    sources.py          Anki forum + Reddit RSS + Bilibili readers (stdlib only)
     ai.py               optional relevance scoring (Gemini / OpenAI-compatible)
     ui.py               the local page: one button per source, no external access
     store.py            SQLite storage, de-duplication, your done/ignore marks

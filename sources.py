@@ -15,6 +15,8 @@ Responsible Builder Policy 之后关掉了自助注册：现在要提交工单�
 抱怨同步的帖子；Reddit 上同样的词可能在讲别的东西。
 """
 
+import hashlib
+import http.cookiejar
 import json
 import re
 import time
@@ -188,3 +190,163 @@ def reddit_rss(subreddit, user_agent, kind="post"):
 def pause(seconds):
     """两次请求之间歇一会儿。被 429 之后再重试，代价比多等几秒高得多。"""
     time.sleep(max(0, seconds))
+
+
+# --- B站 ---------------------------------------------------------------------
+#
+# 【为什么是 B站，不是贴吧】（2026-09-20 实测）：贴吧连首页都 403——百度把机房 IP
+# 和脚本特征直接挡掉，从美国和大陆服务器试都一样，带 cookie 也没用。B站 的搜索和
+# 评论接口不需要登录、不需要签名，从境内境外都能读。
+#
+# 【真正的抱怨在评论区，不在视频里】：遇到同步问题的人很少专门发视频，但会在
+# 「Anki 怎么同步」这类教程下面留一句"传半天传不上"。所以搜到视频只是第一步，
+# 值钱的是它下面的评论。
+
+BILI_API = "https://api.bilibili.com"
+BILI_HEADERS = {
+    # 【必须带浏览器 UA 和 Referer】：少了任何一个，接口会返回 -403。
+    # 光有这两个还不够，见下面 _bili_session 的 cookie 握手。
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "Referer": "https://www.bilibili.com/",
+}
+
+
+# 【进门要先擦鞋】：B站 的接口对"一上来就直接调 API、身上一块 cookie 都没有"
+# 的请求返回 412。浏览器不会这样——它先打开首页，拿到一个匿名的设备标识
+# （buvid3），之后每次请求都带着。这里照做一次：开一个带 cookie 罐的 opener，
+# 进程里第一次用到 B站 时访问一次首页，后面所有请求复用同一罐 cookie。
+# 不登录、不带账号，拿到的仍然只是公开数据。
+_bili_opener = None
+
+
+def _bili_session():
+    global _bili_opener
+    if _bili_opener is not None:
+        return _bili_opener
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    opener.addheaders = list(BILI_HEADERS.items())
+    try:
+        with opener.open("https://www.bilibili.com/", timeout=TIMEOUT) as response:
+            response.read(1024)     # 要的是响应头里的 Set-Cookie，正文不关心
+    except Exception:
+        # 拿不到 cookie 也继续——后面的请求自己会报 412，错误信息更具体。
+        pass
+    _bili_opener = opener
+    return opener
+
+
+def _bili(url):
+    opener = _bili_session()
+    try:
+        with opener.open(url, timeout=TIMEOUT) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 412:
+            # B站 用 412 表示"你看起来像爬虫"，继续请求只会被盯得更紧。
+            raise RateLimited("B站 判定为异常请求（HTTP 412），本轮停止") from exc
+        raise SourceError(f"HTTP {exc.code}：{url}") from exc
+    except urllib.error.URLError as exc:
+        raise SourceError(f"{exc.reason}：{url}") from exc
+
+    code = payload.get("code")
+    if code == -412:
+        raise RateLimited("B站 判定为异常请求（code -412），本轮停止")
+    if code != 0:
+        raise SourceError(f"B站 返回 code={code}：{payload.get('message')}")
+    return payload.get("data") or {}
+
+
+# 【评论接口要签名】：老的 x/v2/reply 现在一律返回 0 条评论——不报错，就是空的
+# （2026-09-20 实测）。网页端走的是 x/v2/reply/wbi/main，每个请求都要按 B站 的
+# "wbi"规则算一个 w_rid 参数：从 nav 接口取两段 key 拼起来，按一张固定的顺序表
+# 重排前 32 位，再和排好序的查询串一起做 md5。算法是公开的，不需要账号——
+# nav 对未登录返回 code=-101，但我们要的 wbi_img 照样在 data 里。
+WBI_TAB = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43,
+           5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16,
+           24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59,
+           6, 63, 57, 62, 11, 36, 20, 34, 44, 52]
+_wbi_key = None
+
+
+def _bili_wbi_key():
+    """那两段 key 每天换一次，一个进程里取一次就够。"""
+    global _wbi_key
+    if _wbi_key:
+        return _wbi_key
+    opener = _bili_session()
+    try:
+        with opener.open(f"{BILI_API}/x/web-interface/nav", timeout=TIMEOUT) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, ValueError) as exc:
+        raise SourceError(f"取不到 B站 的 wbi key：{exc}") from exc
+    images = (payload.get("data") or {}).get("wbi_img") or {}
+    if not images.get("img_url"):
+        raise SourceError("B站 的 nav 接口里没有 wbi key")
+    raw = "".join(
+        images[name].rsplit("/", 1)[-1].split(".")[0] for name in ("img_url", "sub_url")
+    )
+    _wbi_key = "".join(raw[i] for i in WBI_TAB)[:32]
+    return _wbi_key
+
+
+def _bili_signed(path, params):
+    params = dict(params, wts=int(time.time()))
+    query = urllib.parse.urlencode(sorted(params.items()))
+    params["w_rid"] = hashlib.md5((query + _bili_wbi_key()).encode("utf-8")).hexdigest()
+    return _bili(f"{BILI_API}{path}?{urllib.parse.urlencode(sorted(params.items()))}")
+
+
+def bilibili_videos(keyword, limit=20):
+    """搜视频。返回的条目里 aid 用来接着抓评论。"""
+    query = urllib.parse.urlencode({"search_type": "video", "keyword": keyword, "page": 1})
+    data = _bili(f"{BILI_API}/x/web-interface/search/type?{query}")
+    items = []
+    for video in (data.get("result") or [])[:limit]:
+        bvid = video.get("bvid") or ""
+        items.append(
+            {
+                "external_id": f"bili:{bvid}",
+                "source": "bilibili",
+                "kind": "post",
+                "community": "bilibili",
+                "title": _strip_html(video.get("title")),
+                "body": _strip_html(video.get("description")),
+                "author": video.get("author") or "",
+                "permalink": f"https://www.bilibili.com/video/{bvid}",
+                "created_utc": int(video.get("pubdate") or 0),
+                "_aid": video.get("aid"),
+                "_bvid": bvid,
+            }
+        )
+    return items
+
+
+def bilibili_comments(aid, bvid, limit=20):
+    """一个视频下的评论。
+
+    【按时间排，不按热度】：热度排出来的是三年前那条点赞最多的，而我们要找的是
+    "最近有人卡在这儿"。mode=2 是时间倒序，mode=3 是热度。
+    """
+    data = _bili_signed("/x/v2/reply/wbi/main",
+                        {"oid": aid, "type": 1, "mode": 2, "plat": 1, "web_location": 1315875})
+    items = []
+    for reply in (data.get("replies") or [])[:limit]:
+        content = (reply.get("content") or {}).get("message") or ""
+        items.append(
+            {
+                "external_id": f"bili:{reply.get('rpid')}",
+                "source": "bilibili",
+                "kind": "comment",
+                "community": "bilibili",
+                "title": "",
+                "body": _strip_html(content),
+                "author": (reply.get("member") or {}).get("uname") or "",
+                # 【链接到视频，不到评论】：B站 的评论没有稳定的直达链接，
+                # 给一个打不开的锚点比不给更糟。
+                "permalink": f"https://www.bilibili.com/video/{bvid}#reply{reply.get('rpid')}",
+                "created_utc": int(reply.get("ctime") or 0),
+            }
+        )
+    return items
