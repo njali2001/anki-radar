@@ -1,58 +1,86 @@
 # anki-radar
 
-在论坛上找出「有人正卡在 Anki 同步或容量上」的帖子，**只读、不发帖**，跑在自己电脑上。
+A small read-only script that finds forum posts where someone is stuck on Anki
+syncing or collection size, and prints them as a list of links for a human to
+read and answer.
 
-## 它做什么
+**It never posts anything.** No comments, no replies, no votes, no messages, no
+account actions of any kind. It produces a local HTML page of links; the replies
+are written and posted by a person, from their own account. There is no code path
+in this repository that writes to any forum — see [What it does not do](#what-it-does-not-do).
 
-1. 用 Reddit 官方 API 读指定版块的新帖和新评论（只读凭据，不登录、不抓网页）。
-2. 用关键词筛出相关的，存进本地 `radar.sqlite3`。
-3. 生成 `report.html` 并打开：每条带直达链接，点开就能用自己的账号回复。
-4. 进过报告的不再重复出现，所以每次看到的都是新的。
+I run a paid Anki sync hosting service, so when I answer someone and mention it,
+I say so in the reply. That disclosure is a rule of this project, not an
+afterthought: undisclosed promotion is both against community norms and, in the
+US, against the FTC endorsement guidelines.
 
-**它不会替你发帖。** 回复要你自己发，并在提到 LeeAB 时说明身份（美国 FTC 的背书
-指引要求披露利益关系）。这不是谨慎，是前提：自动发的推广回复会让账号被封、
-域名被整个拉黑，那之后连真实用户的推荐都发不出去。
+## What it does
 
-## 怎么跑
+1. Reads public sources for a small set of keywords:
+   - the official Anki forum (`forums.ankiweb.net`, Discourse search JSON)
+   - public subreddit feeds (`reddit.com/r/<sub>/new.rss`)
+2. Keeps whole-word keyword matches from the last N days in a local SQLite file.
+3. Writes `report.html` — one card per hit with a direct link to the thread.
+4. Anything that has appeared in a report never appears in another one, so each
+   run shows only what is new.
 
-    run.bat                 扫一轮（读 config.json），生成并打开报告
-    run.bat --sample        用离线样例数据跑，不联网（没有凭据时用这个）
-    run.bat --limit 10      这次报告里最多放 10 条
-    run.bat --again         重新打开上一份报告，不扫描
-    run.bat --stats         看看各个关键词分别带来了多少条、有多少是噪音
+Typical volume: a handful of posts per day. This is a reading list, not a feed.
 
-## 配置
+## What it does not do
 
-把 `config.example.json` 复制成 `config.json` 再改。**`config.json` 不进 git**，
-凭据只留在这台机器上。
+- It does not post, comment, vote, message, or follow anyone.
+- It does not log in. Reddit access is anonymous (public RSS); the Anki forum is
+  read through its public search endpoint.
+- It does not store user profiles, build audience datasets, or track individuals.
+  Each row is a link, a title, a short excerpt, and which keyword matched.
+- It does not run continuously. A run is a handful of HTTP requests, with a
+  mandatory pause between them (configurable, default 20s for Reddit), and is
+  meant to be run a few times a day at most.
+- It has no scheduler, queue, or worker. It is one script you run by hand.
 
-要填的两个值这样拿：
+## Running it
 
-1. 打开 https://www.reddit.com/prefs/apps
-2. 点「create another app」，类型选 **script**，名字随便（比如 `anki-radar`），
-   redirect uri 填 `http://localhost:8080`
-3. 创建后页面上：应用名下面那串是 **client_id**，secret 那一栏是 **client_secret**
-4. **不需要填账号密码。** 这个工具用的是只读凭据，拿到的令牌没有发帖权限——
-   哪天有人给它加了发帖代码，那段代码会当场失败，而不是悄悄发出去一条。
+    run.bat                 scan and open the report      (Windows)
+    python radar.py         same thing                    (any OS)
+    python radar.py --sample     offline sample data, no network
+    python radar.py --forum-only only the Anki forum, no Reddit
+    python radar.py --again      reopen the last report
+    python radar.py --stats      which keyword produced how many hits
 
-## 关键词怎么选
+No dependencies — Python standard library and SQLite only.
 
-Reddit 的搜索和这里的匹配都是「整词/原句」，**不支持「同时包含 A 和 B」**。
-所以不要写 `anki collection too large` 去限定范围——那只会匹配一字不差写出这一
-整串的帖子。要选**本身就只有 Anki 用户才会说**的词：
+## Configuration
 
-    AnkiWeb                      提到它的基本都和同步有关
-    collection is too large      报错原文的核心片段，这批人当下就需要方案
-    self-hosted sync server      已经在考虑自己搭服务器的人，离付费最近
-    anki sync                    抱怨时最常见的说法
-    media sync                   媒体同步慢；偏泛，跑两周看噪音大不大
+Copy `config.example.json` to `config.json` and edit. Both sources work without
+any credentials.
 
-## 文件
+    user_agent      identify yourself; Reddit asks for this and rate-limits
+                    vague ones. ASCII only (HTTP headers cannot hold anything else).
+    keywords        whole-word, case-insensitive. Pick phrases only Anki users
+                    would write; there is no AND across separate words.
+    max_age_days    older threads have usually been answered already.
+    pause_seconds   delay between HTTP requests. Raise it if you see HTTP 429.
+    daily_limit     how many items land in one report.
 
-    radar.py            主程序
-    reddit.py           Reddit 只读客户端（标准库，无第三方依赖）
-    store.py            本地 SQLite 存储与去重
-    sample_posts.json   离线样例数据
-    config.json         你的配置与凭据（不进 git）
-    radar.sqlite3       本地数据库（不进 git）
-    report.html         最近一次报告（不进 git）
+## Why not the Reddit API
+
+Since Reddit's Responsible Builder Policy (November 2025), OAuth app registration
+is no longer self-service: access is granted per request through a support ticket.
+This script therefore reads the public RSS feeds instead, at a deliberately low
+rate. If API access is granted, swapping the source is a small change — but the
+"never posts" property above would stay exactly as it is.
+
+## Files
+
+    radar.py            entry point: scan, filter, report
+    sources.py          Anki forum + Reddit RSS readers (stdlib only)
+    store.py            SQLite storage and de-duplication
+    sample_posts.json   offline sample data for --sample
+    config.example.json copy to config.json (which is gitignored)
+
+Code comments are in Chinese — this started as a personal tool. The README,
+the CLI help and the configuration file are in English.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
