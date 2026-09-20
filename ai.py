@@ -184,3 +184,66 @@ def score(rows, cfg):
                 continue
             results[row["external_id"]] = (int(item.get("score", 0)), str(item.get("reason", ""))[:120])
     return results
+
+
+# --- 答题要点 ----------------------------------------------------------------
+
+BRIEF_PROMPT = """You are helping someone answer one forum post about Anki.
+
+He will write the reply himself, in his own words. Your job is only to give him
+the material: what the person is stuck on, and which facts apply. Write in
+Chinese, except for technical terms and anything he should quote verbatim.
+
+Hard rules:
+- Use ONLY the facts listed below. If a technical detail is not in that list,
+  do not state it — write "需要确认" instead. Getting a limit or a setting
+  wrong in public costs him more than saying nothing.
+- Do not write the reply itself. No greetings, no sign-off, no marketing.
+- If the post is too vague to answer, say what to ask him first.
+
+Facts you may use:
+{facts}
+
+How he answers:
+{style}
+
+Output exactly these three sections, in Chinese, no code fences:
+
+他卡在哪
+- （一到三条）
+
+可以告诉他的事实
+- （只能来自上面的清单；每条尽量短）
+
+要不要提 LeeAB
+- （提 / 不提，一句话说明为什么；要提的话给出那句身份说明）
+
+The post:
+"""
+
+
+def brief(row, cfg):
+    """给一条帖子生成答题要点。返回一段纯文本。
+
+    【用备用那家】（默认 Groq）：筛选是每天都要跑的、必须稳；写要点是点一次跑一次、
+    量小。分开用两家的免费额度，谁也不挤谁。
+    """
+    settings = dict(cfg.get("fallback") or {})
+    if not settings.get("api_key"):
+        settings = dict(cfg)   # 没配备用就用主用
+    settings.pop("fallback", None)
+    if not settings.get("api_key"):
+        raise AIError("config.json 里没有可用的 api_key")
+
+    import facts as facts_module
+
+    prompt = BRIEF_PROMPT.format(
+        facts="\n".join(f"- {f}" for f in facts_module.FACTS),
+        style="\n".join(f"- {s}" for s in facts_module.STYLE),
+    )
+    body = json.dumps(
+        {"title": row.get("title") or "", "text": (row.get("body") or "")[:1500],
+         "where": row.get("community") or "", "kind": row.get("kind") or "post"},
+        ensure_ascii=False,
+    )
+    return _ask(prompt + body, settings).strip()

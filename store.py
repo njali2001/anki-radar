@@ -133,6 +133,13 @@ class Store:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get(self, external_id):
+        with self.lock:
+            row = self.db.execute(
+                "SELECT * FROM posts WHERE external_id = ?", (external_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
     def set_verdict(self, external_id, value):
         """记下你对这一条的处理：done / ignored。"""
         with self.lock:

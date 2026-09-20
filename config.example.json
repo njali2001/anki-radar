@@ -57,6 +57,7 @@
       "base_url": "https://api.groq.com/openai/v1",
       "model": "openai/gpt-oss-120b",
       "api_key": ""
-    }
+    },
+    "_brief": "页面上每条帖子的【写要点】按钮用的是 fallback 那家（Groq），没配 fallback 就用主用。要点只给材料，回复由人自己写。"
   }
 }

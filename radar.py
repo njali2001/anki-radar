@@ -290,6 +290,12 @@ h2 .count { color: #8b93a1; font-weight: 400; font-size: 13.5px; margin-left: 6p
 .act:hover { border-color: #46505f; color: #cdd3dc; }
 .act.done:hover { border-color: #3a5a26; color: #cfe8a8; }
 .card.gone { opacity: .35; }
+/* 要点是给人抄材料用的，不是成品回复——用等宽字体和缩进把它和帖子正文分开，
+   免得看着像"可以直接贴出去的东西"。 */
+.brief { margin-top: 12px; padding: 12px 14px; border-left: 3px solid #3d4d24;
+         background: #171a1f; color: #cdd3dc; font-size: 13.5px; line-height: 1.75;
+         white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; }
+.brief.error { border-left-color: #6b3a2c; color: #f0a08a; }
 .note { margin-top: 36px; padding-top: 16px; border-top: 1px solid #262a31;
         color: #8b93a1; font-size: 13.5px; }
 """
@@ -377,6 +383,7 @@ def cards_for(rows):
     </div>
     <div class="snippet">{highlight(snippet, hits)}</div>
     <div class="acts" data-id="{html.escape(row['external_id'])}">
+      <button class="act brief-btn">写要点</button>
       <button class="act done" data-value="done">已处理</button>
       <button class="act" data-value="ignored">忽略</button>
     </div>
@@ -508,8 +515,33 @@ document.querySelectorAll(".src-btn").forEach(btn => {{
   }});
 }});
 // 【点完就地消失，不刷新整页】：刷新会跳回页首，而人正读到第三条。
+// 【写要点：点了才生成】。不自动给每条生成——既省额度，也免得一屏草稿把
+// "今天该看哪几条"这件事淹掉。生成的是材料，不是成品回复，回复由人自己写。
+document.querySelectorAll(".brief-btn").forEach(btn => {{
+  btn.addEventListener("click", async () => {{
+    const acts = btn.closest(".acts");
+    const card = acts.closest(".card");
+    if (card.querySelector(".brief")) return;   // 已经生成过就不重复花钱
+    const box = document.createElement("div");
+    box.className = "brief";
+    box.textContent = "生成中…";
+    card.appendChild(box);
+    btn.disabled = true;
+    try {{
+      const res = await fetch("/brief?id=" + encodeURIComponent(acts.dataset.id));
+      const data = await res.json();
+      if (data.text) {{ box.textContent = data.text; }}
+      else {{ box.className = "brief error"; box.textContent = "生成失败：" + (data.error || "未知原因"); }}
+    }} catch (e) {{
+      box.className = "brief error";
+      box.textContent = "生成失败：连不上本地服务，刷新页面试试";
+    }}
+    btn.disabled = false;
+  }});
+}});
+
 document.querySelectorAll(".acts").forEach(acts => {{
-  acts.querySelectorAll(".act").forEach(btn => {{
+  acts.querySelectorAll(".act[data-value]").forEach(btn => {{
     btn.addEventListener("click", async () => {{
       const card = acts.closest(".card");
       card.classList.add("gone");
@@ -522,7 +554,16 @@ document.querySelectorAll(".acts").forEach(acts => {{
   }});
 }});
 async function poll() {{
-  const state = await (await fetch("/status")).json();
+  let state;
+  try {{
+    state = await (await fetch("/status")).json();
+  }} catch (e) {{
+    // 【断线要说出来】：本地服务被关掉之后，页面会永远停在"扫描中"那个闪烁
+    // 状态，人以为还在扫，其实早就没人在扫了（2026-09-20 运营者遇到）。
+    document.querySelectorAll(".src-btn.busy").forEach(b => b.classList.remove("busy"));
+    step.textContent = "和本地服务断开了 —— 刷新页面；打不开就双击 run.bat 重开";
+    return;
+  }}
   step.textContent = state.step || "";
   if (state.busy) {{ setTimeout(poll, 1000); return; }}
   // 扫完了：重画整页，这样榜单、按钮颜色、时间全都跟着更新。

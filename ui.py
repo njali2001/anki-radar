@@ -96,6 +96,21 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
                 self._send(render_page(store, config, state.snapshot()))
             elif parsed.path == "/status":
                 self._send(json.dumps(state.snapshot()), "application/json")
+            elif parsed.path == "/brief":
+                query = urllib.parse.parse_qs(parsed.query)
+                ident = (query.get("id") or [""])[0]
+                row = store.get(ident)
+                if not row:
+                    self._send(json.dumps({"error": "没有这一条"}), "application/json", 404)
+                    return
+                try:
+                    import ai
+
+                    text = ai.brief(row, config.get("ai", {}))
+                except Exception as exc:  # noqa: BLE001
+                    self._send(json.dumps({"error": str(exc)[:300]}), "application/json", 502)
+                    return
+                self._send(json.dumps({"text": text}), "application/json")
             elif parsed.path == "/verdict":
                 query = urllib.parse.parse_qs(parsed.query)
                 ident = (query.get("id") or [""])[0]
