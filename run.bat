@@ -18,12 +18,12 @@ if not exist "%PY%" (
   pause
   exit /b 1
 )
-rem Double-clicking (no arguments) scans the Anki forum only: it finishes in
-rem seconds, while a Reddit pass needs a 20s pause between requests (~5 min).
-rem Reddit is covered by F5Bot email alerts anyway. Force a full run with:
-rem   run.bat --all
+rem Double-clicking (no arguments) opens the local web page: it scans the Anki
+rem forum right away (seconds) and leaves Reddit to a button, because a Reddit
+rem pass needs a 20s pause between requests (~5 min). Close it with Ctrl-C.
+rem One-off command line runs still work: run.bat --forum-only --no-open
 set "ARGS=%*"
-if "%~1"=="" set "ARGS=--forum-only"
+if "%~1"=="" set "ARGS=--serve"
 if /I "%~1"=="--all" set "ARGS="
 "%PY%" "%~dp0radar.py" %ARGS%
 if errorlevel 1 pause

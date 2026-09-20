@@ -16,6 +16,7 @@
 """
 
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -45,21 +46,33 @@ class AIError(RuntimeError):
     pass
 
 
+# 【503 和 429 要重试，别的不要】：前者是模型临时过载、后者是超额度，两个都
+# 等一会儿就好；而 400（请求写错了）、404（模型下线了）重试一百次也是错的，
+# 早点报出来才有人去改。
+RETRY_CODES = (429, 503)
+BACKOFF = (5, 15, 40)
+
+
 def _post(url, payload, headers):
-    request = urllib.request.Request(
-        url, data=json.dumps(payload).encode("utf-8"), method="POST"
-    )
-    request.add_header("Content-Type", "application/json")
-    for key, value in headers.items():
-        request.add_header(key, value)
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "replace")[:300]
-        raise AIError(f"HTTP {exc.code}：{body}") from exc
-    except urllib.error.URLError as exc:
-        raise AIError(str(exc.reason)) from exc
+    body = json.dumps(payload).encode("utf-8")
+    for attempt, wait in enumerate(BACKOFF, start=1):
+        request = urllib.request.Request(url, data=body, method="POST")
+        request.add_header("Content-Type", "application/json")
+        for key, value in headers.items():
+            request.add_header(key, value)
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            if exc.code in RETRY_CODES and attempt < len(BACKOFF):
+                print(f"  模型暂时不可用（HTTP {exc.code}），等 {wait} 秒再试…", flush=True)
+                time.sleep(wait)
+                continue
+            raise AIError(f"HTTP {exc.code}：{detail}") from exc
+        except urllib.error.URLError as exc:
+            raise AIError(str(exc.reason)) from exc
+    raise AIError("重试之后仍然失败")
 
 
 def _extract_json(text):

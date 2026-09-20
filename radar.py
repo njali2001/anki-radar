@@ -22,6 +22,7 @@ from pathlib import Path
 
 import ai
 import sources
+import ui
 from store import Store
 
 HERE = Path(__file__).resolve().parent
@@ -53,7 +54,7 @@ def matches(text, patterns):
     return [keyword for keyword, pattern in patterns if pattern.search(text or "")]
 
 
-def collect(config, use_sample):
+def collect(config, use_sample, only=None, progress=None):
     """取回一批候选条目。样例模式不联网。
 
     【一个源坏掉不该让整轮失败】：版块改名、论坛升级、临时限流都会这样，
@@ -72,15 +73,20 @@ def collect(config, use_sample):
     items = []
     first = True
 
+    def say(text):
+        print(f"  {text}", flush=True)
+        if progress:
+            progress(text)
+
     forum = config.get("anki_forum", {})
-    if forum.get("enabled", True):
+    if forum.get("enabled", True) and only in (None, "ankiforum"):
         # 【论坛用关键词搜，一个词一次请求】：那里的人全是 Anki 用户，
         # 搜索接口直接带摘要，信噪比比按版块翻高得多。
         for keyword in config["keywords"]:
             if not first:
                 sources.pause(forum.get("pause_seconds", 3))
             first = False
-            print(f"  Anki 论坛：{keyword}", flush=True)
+            say(f"Anki 论坛：{keyword}")
             try:
                 items.extend(
                     sources.anki_forum(keyword, user_agent, days=config.get("max_age_days", 14))
@@ -89,7 +95,7 @@ def collect(config, use_sample):
                 print(f"  跳过 Anki 论坛「{keyword}」：{exc}")
 
     reddit_cfg = config.get("reddit_rss", {})
-    if reddit_cfg.get("enabled", True):
+    if reddit_cfg.get("enabled", True) and only in (None, "reddit"):
         # 【Reddit 只走公开 RSS，而且要很克制】：.json 已经 403，.rss 还能用，
         # 但连发几次就 429。每个请求之间歇 pause_seconds 秒。
         for subreddit in reddit_cfg.get("subreddits", []):
@@ -97,8 +103,8 @@ def collect(config, use_sample):
                 if not first:
                     sources.pause(pause_seconds)
                 first = False
-                print(f"  r/{subreddit} 的{'评论' if kind == 'comment' else '帖子'}"
-                      f"（每次请求之间等 {pause_seconds} 秒）", flush=True)
+                say(f"r/{subreddit} 的{'评论' if kind == 'comment' else '帖子'}"
+                    f"（每次请求之间等 {pause_seconds} 秒）")
                 try:
                     items.extend(sources.reddit_rss(subreddit, user_agent, kind=kind))
                 except sources.SourceError as exc:
@@ -106,7 +112,7 @@ def collect(config, use_sample):
     return items
 
 
-def scan(store, config, use_sample):
+def scan(store, config, use_sample, only=None, progress=None):
     patterns = [(k, pattern_for(k)) for k in config["keywords"] if k.strip()]
     now = int(time.time())
     # 【太老的直接扔掉】：一条两周前的求助帖，要么早有人答了，要么提问的人已经
@@ -118,7 +124,7 @@ def scan(store, config, use_sample):
     added = 0
     seen = 0
     stale = 0
-    for item in collect(config, use_sample):
+    for item in collect(config, use_sample, only=only, progress=progress):
         seen += 1
         if item["created_utc"] < oldest:
             stale += 1
@@ -133,6 +139,50 @@ def scan(store, config, use_sample):
         if store.add(item, hit, now):
             added += 1
     return seen, added, stale
+
+
+def scan_source(store, config, source, progress=None):
+    """网页版点一个按钮时走的路径：只扫这个源，然后给这个源出一批。"""
+    seen, added, stale = scan(store, config, False, only=source, progress=progress)
+    if progress:
+        progress("AI 打分…" if config.get("ai", {}).get("enabled") else "整理结果…")
+    pick_for(store, config, config.get("daily_limit", 5), source)
+    return seen, added, stale
+
+
+def pick_for(store, config, limit, source, use_ai=True):
+    """给某一个源挑出这一批。被 AI 刷掉的标成 ai_rejected，不再出现在任何榜单里。"""
+    cfg = config.get("ai", {})
+    now = int(time.time())
+
+    if not (use_ai and cfg.get("enabled") and cfg.get("api_key")):
+        return store.pending(source, limit)
+
+    candidates = store.unscored_pending(source, int(cfg.get("candidates", 25)))
+    if not candidates:
+        return store.pending(source, limit)
+
+    print(f"  AI 打分：{len(candidates)} 条…", flush=True)
+    try:
+        scores = ai.score(candidates, cfg)
+    except ai.AIError as exc:
+        # 【AI 挂了不挡事】：额度、网络、返回格式变了，都退回纯关键词，
+        # 并把原因打出来——不要静悄悄地变成另一种行为。
+        print(f"  AI 打分失败（这一轮按关键词排）：{exc}", flush=True)
+        return store.pending(source, limit)
+
+    store.set_scores(scores)
+    minimum = int(cfg.get("min_score", 2))
+    rejected = [
+        row["external_id"] for row in candidates
+        if (scores.get(row["external_id"]) or (minimum, ""))[0] < minimum
+        and row["external_id"] in scores
+    ]
+    if rejected:
+        store.mark_rejected(rejected)
+        print(f"  AI 判定不相关，刷掉 {len(rejected)} 条", flush=True)
+    store.mark_reported([r["external_id"] for r in candidates if r["external_id"] in scores], now)
+    return store.pending(source, limit)
 
 
 def pick(store, config, limit, use_ai=True):
@@ -208,10 +258,38 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .src-forum { background: #1f3346; color: #9cc9f0; }
 .src-reddit { background: #46281f; color: #f0b79c; }
 .ai { background: #2a2440; color: #c3b6f0; }
+
+/* 【指示灯就是按钮本身】（2026-09-20 运营者定）：绿 = 这一轮扫过了，灰 = 还没扫。
+   灰的点一下就在后台扫，扫完页面自己更新。不另做一排状态图标——一个东西
+   既表示状态又是操作入口，比"图标 + 旁边一个按钮"少一次找。 */
+.bar { display: flex; gap: 10px; align-items: center; margin: 0 0 26px; flex-wrap: wrap; }
+.src-btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+           border: 1px solid #2f3540; border-radius: 999px; padding: 8px 16px;
+           background: #1a1d22; color: #aeb5c0; font: inherit; font-size: 14px; }
+.src-btn:hover { border-color: #46505f; }
+.src-btn .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6472; }
+.src-btn.done { color: #cfe8a8; border-color: #3a4a26; }
+.src-btn.done .dot { background: #8fd14f; }
+.src-btn.busy { color: #e8d9a8; border-color: #4a4326; }
+.src-btn.busy .dot { background: #e8c35a; animation: pulse 1s infinite; }
+.src-btn[disabled] { cursor: default; opacity: .75; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.status { color: #8b93a1; font-size: 13.5px; }
+.err { color: #f0a08a; font-size: 13.5px; }
+h2 { font-size: 16px; margin: 30px 0 12px; color: #cdd3dc; font-weight: 600; }
+h2 .count { color: #8b93a1; font-weight: 400; font-size: 13.5px; margin-left: 6px; }
 .snippet { margin-top: 10px; color: #aeb5c0; font-size: 14.5px; white-space: pre-wrap; }
 .snippet mark, .card a.title mark { background: #3d4d24; color: #dcf5a0; border-radius: 3px;
                                     padding: 0 2px; }
 .empty { color: #8b93a1; }
+/* 【处理按钮放在卡片右下角】：读完一条的动作是"看完 → 决定 → 下一条"，
+   按钮跟在内容后面最顺手；放在标题旁边会和"打开原帖"抢注意力。 */
+.acts { margin-top: 12px; display: flex; gap: 8px; }
+.act { cursor: pointer; border: 1px solid #2f3540; background: #1a1d22; color: #9aa3b0;
+       border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 13px; }
+.act:hover { border-color: #46505f; color: #cdd3dc; }
+.act.done:hover { border-color: #3a5a26; color: #cfe8a8; }
+.card.gone { opacity: .35; }
 .note { margin-top: 36px; padding-top: 16px; border-top: 1px solid #262a31;
         color: #8b93a1; font-size: 13.5px; }
 """
@@ -276,7 +354,7 @@ def ago(seconds):
     return f"{hours // 24} 天前"
 
 
-def render(rows, sample):
+def cards_for(rows):
     cards = []
     for row in rows:
         title = row["title"] or (row["body"][:90] + "…")
@@ -298,9 +376,17 @@ def render(rows, sample):
       {score_tag(row)}
     </div>
     <div class="snippet">{highlight(snippet, hits)}</div>
+    <div class="acts" data-id="{html.escape(row['external_id'])}">
+      <button class="act done" data-value="done">已处理</button>
+      <button class="act" data-value="ignored">忽略</button>
+    </div>
   </div>""")
 
-    body = "\n".join(cards) if cards else '<p class="empty">这一轮没有新的。</p>'
+    return "\n".join(cards) if cards else ""
+
+
+def render(rows, sample):
+    body = cards_for(rows) or '<p class="empty">这一轮没有新的。</p>'
     banner = '<p class="meta">⚠ 这是离线样例数据，不是真实的 Reddit 内容。</p>' if sample else ""
     stamp = time.strftime("%Y-%m-%d %H:%M")
     return f"""<!doctype html>
@@ -315,6 +401,93 @@ def render(rows, sample):
   这些是<strong>链接，不是草稿</strong>。回复请用你自己的账号发，提到 LeeAB 时说明身份。<br>
   已经列进这份报告的条目不会再出现在下一份里。
 </p>
+</body></html>
+"""
+
+
+def ago_text(stamp):
+    if not stamp:
+        return "还没扫过"
+    return f"{ago(int(stamp))}扫过"
+
+
+def render_page(store, config, status):
+    """网页版的整页。两个源各一个按钮、各一份榜单。"""
+    limit = config.get("daily_limit", 5)
+    sections, buttons = [], []
+    for source in ("ankiforum", "reddit"):
+        label = {"ankiforum": "Anki 论坛", "reddit": "Reddit"}[source]
+        last = store.get_meta(f"last_scan_{source}")
+        busy = status.get("busy") == source
+        css = "busy" if busy else ("done" if last else "")
+        buttons.append(
+            f'<button class="src-btn {css}" data-source="{source}"'
+            f'{" disabled" if busy else ""}>'
+            f'<span class="dot"></span>{label}'
+            f'<span class="status">· {"扫描中…" if busy else ago_text(last)}</span></button>'
+        )
+        rows = store.pending(source, limit)
+        waiting = store.pending_count(source)
+        more = f"，还有 {waiting - len(rows)} 条排队" if waiting > len(rows) else ""
+        sections.append(
+            f'<h2>{label}<span class="count">{len(rows)} 条{more}</span></h2>'
+            + (cards_for(rows) or '<p class="empty">这一轮没有值得看的。</p>')
+        )
+
+    err = f'<p class="err">出错了：{html.escape(status.get("error") or "")}</p>' if status.get("error") else ""
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    return f"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar</title>
+<style>{STYLE}</style></head>
+<body>
+<h1>值得看的帖子</h1>
+<p class="meta">{stamp} · 点标题在新标签页打开原帖 · 灰色的按钮点一下就去扫</p>
+<div class="bar">{''.join(buttons)}<span class="status" id="step">{html.escape(status.get("step") or "")}</span></div>
+{err}
+{''.join(sections)}
+<p class="note">
+  这些是<strong>链接，不是草稿</strong>。回复请用你自己的账号发，提到 LeeAB 时说明身份。<br>
+  点【已处理】或【忽略】之后那一条就不再出现；没点的下次打开还在。
+  AI 判定不相关的会被直接刷掉，不占位置。
+</p>
+<script>
+// 【点一下就在后台扫，页面每秒问一次进度】：Reddit 那边一轮要四五分钟
+// （每个请求之间强制等 20 秒），没有进度的话人会以为它卡死了。
+const step = document.getElementById("step");
+document.querySelectorAll(".src-btn").forEach(btn => {{
+  btn.addEventListener("click", async () => {{
+    if (btn.disabled) return;
+    btn.classList.add("busy");
+    btn.disabled = true;
+    const res = await fetch("/scan?source=" + btn.dataset.source);
+    if (!res.ok) {{ step.textContent = "另一个源正在扫，等它扫完"; return; }}
+    poll();
+  }});
+}});
+// 【点完就地消失，不刷新整页】：刷新会跳回页首，而人正读到第三条。
+document.querySelectorAll(".acts").forEach(acts => {{
+  acts.querySelectorAll(".act").forEach(btn => {{
+    btn.addEventListener("click", async () => {{
+      const card = acts.closest(".card");
+      card.classList.add("gone");
+      const url = "/verdict?id=" + encodeURIComponent(acts.dataset.id)
+                + "&value=" + btn.dataset.value;
+      const res = await fetch(url);
+      if (res.ok) {{ card.remove(); }}
+      else {{ card.classList.remove("gone"); step.textContent = "标记失败，刷新页面再试"; }}
+    }});
+  }});
+}});
+async function poll() {{
+  const state = await (await fetch("/status")).json();
+  step.textContent = state.step || "";
+  if (state.busy) {{ setTimeout(poll, 1000); return; }}
+  // 扫完了：重画整页，这样榜单、按钮颜色、时间全都跟着更新。
+  location.reload();
+}}
+// 页面打开时如果后台正在扫（比如双击启动时那一轮），接着轮询。
+if ({ 'true' if status.get('busy') else 'false' }) poll();
+</script>
 </body></html>
 """
 
@@ -338,6 +511,9 @@ def main():
     parser.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
     parser.add_argument("--forum-only", action="store_true", help="只扫 Anki 论坛，不碰 Reddit")
     parser.add_argument("--no-ai", action="store_true", help="这次不用 AI 打分，只按关键词")
+    parser.add_argument("--serve", action="store_true",
+                        help="开本地网页版：两个源各一个按钮，点灰色的那个去扫")
+    parser.add_argument("--port", type=int, default=8899, help="网页版端口（默认 8899）")
     args = parser.parse_args()
 
     config = load_config()
@@ -347,6 +523,14 @@ def main():
     limit = args.limit or config.get("daily_limit", 5)
 
     try:
+        if args.serve:
+            # 【启动时先扫一遍论坛】：它几十秒就完事，人打开页面时就已经有东西看了。
+            # Reddit 不自动扫——那要四五分钟，该不该花这个时间由人决定。
+            ui.serve(store, config, scan_source, render_page,
+                     port=args.port, open_browser=not args.no_open,
+                     warm_source="ankiforum")
+            return
+
         if args.stats:
             counts = store.keyword_stats()
             totals = store.totals()

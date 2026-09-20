@@ -46,7 +46,7 @@
   "ai": {
     "enabled": false,
     "provider": "gemini",
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.6-flash",
     "api_key": "",
     "candidates": 25,
     "min_score": 2,

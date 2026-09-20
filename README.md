@@ -40,12 +40,21 @@ Typical volume: a handful of posts per day. This is a reading list, not a feed.
 
 ## Running it
 
-    run.bat                 scan and open the report      (Windows)
-    python radar.py         same thing                    (any OS)
-    python radar.py --sample     offline sample data, no network
-    python radar.py --forum-only only the Anki forum, no Reddit
-    python radar.py --again      reopen the last report
-    python radar.py --stats      which keyword produced how many hits
+    run.bat                      open the local page          (Windows)
+    python radar.py --serve      same thing                   (any OS)
+
+The page runs on 127.0.0.1 and has one button per source. The Anki forum is
+scanned on startup (seconds); Reddit waits for a click, because a Reddit pass
+needs a 20-second pause between requests. Each post has **已处理 / 忽略**
+(done / ignore) buttons: what you act on disappears, what you don't is still
+there next time.
+
+One-off runs without the page:
+
+    python radar.py --forum-only --no-open   scan the forum, write report.html
+    python radar.py --sample                 offline sample data, no network
+    python radar.py --again                  reopen the last report
+    python radar.py --stats                  which keyword produced how many hits
 
 No dependencies — Python standard library and SQLite only.
 
@@ -61,6 +70,10 @@ any credentials.
     max_age_days    older threads have usually been answered already.
     pause_seconds   delay between HTTP requests. Raise it if you see HTTP 429.
     daily_limit     how many items land in one report.
+    ai              optional. With an API key and enabled=true, keyword hits are
+                    scored 0-3 for "is this person actually stuck on syncing or
+                    size"; only 2+ is shown, with a one-line reason. Without a
+                    key the tool falls back to keywords alone.
 
 ## Why not the Reddit API
 
@@ -72,9 +85,11 @@ rate. If API access is granted, swapping the source is a small change — but th
 
 ## Files
 
-    radar.py            entry point: scan, filter, report
+    radar.py            entry point: scan, filter, score, render
     sources.py          Anki forum + Reddit RSS readers (stdlib only)
-    store.py            SQLite storage and de-duplication
+    ai.py               optional relevance scoring (Gemini / OpenAI-compatible)
+    ui.py               the local page: one button per source, no external access
+    store.py            SQLite storage, de-duplication, your done/ignore marks
     sample_posts.json   offline sample data for --sample
     config.example.json copy to config.json (which is gitignored)
 
