@@ -1,17 +1,29 @@
 @echo off
-rem anki-radar 启动器。双击即可，也可以带参数：run.bat --sample
+rem anki-radar launcher. Double-click, or pass arguments: run.bat --forum-only
 rem
-rem 【要先把 Anaconda 的 Library\bin 加进 PATH】：这台机器上的 Python 不把它
-rem 放进搜索路径时 import ssl 会失败（DLL load failed），而 Reddit 的 API 是 HTTPS。
+rem ASCII only, CRLF line endings, on purpose: chcp switches the console code page
+rem and cmd.exe keeps reading this file by byte offset afterwards. A multi-byte
+rem character above would shift those offsets and break the rest of the script.
 setlocal
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
 set "PY=%USERPROFILE%\anaconda3\python.exe"
+rem Anaconda needs Library\bin on PATH or `import ssl` fails (DLL load failed),
+rem and both sources are HTTPS.
 set "PATH=%USERPROFILE%\anaconda3\Library\bin;%USERPROFILE%\anaconda3;%PATH%"
 if not exist "%PY%" (
-  echo 找不到 %PY% —— 请改这个文件里的 PY 变量指向你的 python.exe
+  echo Python not found at %PY%
+  echo Edit the PY line in this file to point at your python.exe
   pause
   exit /b 1
 )
-"%PY%" "%~dp0radar.py" %*
+rem Double-clicking (no arguments) scans the Anki forum only: it finishes in
+rem seconds, while a Reddit pass needs a 20s pause between requests (~5 min).
+rem Reddit is covered by F5Bot email alerts anyway. Force a full run with:
+rem   run.bat --all
+set "ARGS=%*"
+if "%~1"=="" set "ARGS=--forum-only"
+if /I "%~1"=="--all" set "ARGS="
+"%PY%" "%~dp0radar.py" %ARGS%
 if errorlevel 1 pause

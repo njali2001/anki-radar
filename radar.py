@@ -148,10 +148,32 @@ h1 { font-size: 22px; margin: 0 0 4px; }
        margin-right: 6px; color: #b9c0cc; }
 .hit { background: #2c3a20; color: #c7e88a; }
 .snippet { margin-top: 10px; color: #aeb5c0; font-size: 14.5px; white-space: pre-wrap; }
+.snippet mark, .card a.title mark { background: #3d4d24; color: #dcf5a0; border-radius: 3px;
+                                    padding: 0 2px; }
 .empty { color: #8b93a1; }
 .note { margin-top: 36px; padding-top: 16px; border-top: 1px solid #262a31;
         color: #8b93a1; font-size: 13.5px; }
 """
+
+
+def highlight(text, keywords):
+    """把命中的关键词裹上 <mark>。
+
+    【先转义再高亮，顺序不能反】：反过来的话我们自己插入的 <mark> 会被转义成
+    可见的字符串。关键词本身是字母数字和空格，转义不会改变它们的写法，
+    所以在转义后的文本上按原词匹配是安全的。
+    """
+    escaped = html.escape(text)
+    for keyword in sorted(keywords, key=len, reverse=True):
+        if not keyword.strip():
+            continue
+        escaped = re.sub(
+            rf"(?<!\w)({re.escape(html.escape(keyword.strip()))})(?!\w)",
+            r"<mark>\1</mark>",
+            escaped,
+            flags=re.IGNORECASE,
+        )
+    return escaped
 
 
 def where(row):
@@ -176,20 +198,21 @@ def render(rows, sample):
     for row in rows:
         title = row["title"] or (row["body"][:90] + "…")
         snippet = (row["body"] or "")[:400]
+        hits = [k for k in row["matched"].split(",") if k.strip()]
         tags = "".join(
             f'<span class="tag hit">{html.escape(k)}</span>'
             for k in row["matched"].split(",") if k
         )
         cards.append(f"""
   <div class="card">
-    <a class="title" href="{html.escape(row['permalink'])}" target="_blank" rel="noopener">{html.escape(title)}</a>
+    <a class="title" href="{html.escape(row['permalink'])}" target="_blank" rel="noopener">{highlight(title, hits)}</a>
     <div class="tags">
       <span class="tag">{html.escape(where(row))}</span>
       <span class="tag">{'评论' if row['kind'] == 'comment' else '帖子'}</span>
       <span class="tag">{ago(row['posted_at'])}</span>
       {tags}
     </div>
-    <div class="snippet">{html.escape(snippet)}</div>
+    <div class="snippet">{highlight(snippet, hits)}</div>
   </div>""")
 
     body = "\n".join(cards) if cards else '<p class="empty">这一轮没有新的。</p>'

@@ -24,6 +24,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 TIMEOUT = 30
+RETRY_AFTER = 60   # 429 没给 Retry-After 时等多久
 ATOM = "{http://www.w3.org/2005/Atom}"
 
 
@@ -46,26 +47,44 @@ def _get(url, user_agent, accept):
     request = urllib.request.Request(url)
     request.add_header("User-Agent", user_agent)
     request.add_header("Accept", accept)
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            return response.read()
-    except urllib.error.HTTPError as exc:
-        hint = ""
-        if exc.code == 429:
-            hint = "（被限流了：把 config.json 里的 pause_seconds 调大）"
-        elif exc.code == 403:
-            hint = "（这个端点已经不对匿名访问开放了）"
-        raise SourceError(f"HTTP {exc.code}{hint}：{url}") from exc
-    except urllib.error.URLError as exc:
-        raise SourceError(f"{exc.reason}：{url}") from exc
+
+    # 【被限流就等一会儿再试一次，只试一次】：429 通常是"刚才太密了"，歇一会儿
+    # 就过去了；但一直重试等于继续加压，所以失败第二次就老实报错、跳过这个源。
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt == 1:
+                wait = int(exc.headers.get("Retry-After") or RETRY_AFTER)
+                print(f"  被限流，等 {wait} 秒再试一次…")
+                time.sleep(wait)
+                continue
+            hint = ""
+            if exc.code == 429:
+                hint = "（还是被限流：把 config.json 里的 pause_seconds 调大，或者过一阵再跑）"
+            elif exc.code == 403:
+                hint = "（这个端点已经不对匿名访问开放了）"
+            raise SourceError(f"HTTP {exc.code}{hint}：{url}") from exc
+        except urllib.error.URLError as exc:
+            raise SourceError(f"{exc.reason}：{url}") from exc
 
 
 def _strip_html(text):
+    """去标签、还原实体、剪掉 RSS 的模板尾巴。
+
+    【用 html.unescape，不要自己列实体表】：Reddit 的 RSS 里有 &#32; 这类数字实体，
+    手写的替换表永远漏，漏掉的会原样印在摘要里。
+
+    【尾巴要剪】：Reddit 每条内容后面都跟着 "submitted by /u/x [link] [comments]"，
+    每条都一样，占掉摘要里最值钱的位置，而且读起来像乱码。
+    """
+    import html as html_module
+
     text = re.sub(r"<[^>]+>", " ", text or "")
-    text = (
-        text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-        .replace("&quot;", '"').replace("&#39;", "'").replace("&hellip;", "…")
-    )
+    text = html_module.unescape(text)
+    text = re.sub(r"\s*submitted by\s*/u/\S+.*$", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"\s*\[link\]\s*\[comments\]\s*$", "", text, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", text).strip()
 
 
