@@ -1,21 +1,24 @@
 {
-  "_说明": "复制成 config.json 再改。config.json 不进 git，凭据只留在本机。",
+  "_说明": "复制成 config.json 再改。config.json 不进 git。两个数据源都不需要任何凭据。",
 
-  "reddit": {
-    "_怎么拿": "https://www.reddit.com/prefs/apps → create another app → 类型选 script。不需要账号密码。",
-    "client_id": "",
-    "client_secret": "",
-    "user_agent": "anki-radar/1.0 (by /u/你的Reddit用户名)"
+  "_为什么没有 Reddit API 凭据": "Reddit 2025-11 起关掉了自助注册，要提交工单等人工审批，而且非商业身份申请商业用途是已知的被拒理由。所以这里走公开 RSS，Reddit 那部分另外用 F5Bot 兜着。",
+
+  "_user_agent 必须是纯英文": "HTTP 头只允许 ASCII，写中文会报编码错误。把邮箱换成你自己的。",
+  "user_agent": "anki-radar/1.0 (personal monitoring; contact: you@example.com)",
+
+  "anki_forum": {
+    "_说明": "Anki 官方论坛。信噪比最高：那里的人全是 Anki 用户。一个关键词一次请求。",
+    "enabled": true,
+    "pause_seconds": 3
   },
 
-  "subreddits": [
-    "Anki",
-    "medicalschoolanki",
-    "medicalschool",
-    "step1",
-    "MCAT",
-    "languagelearning"
-  ],
+  "reddit_rss": {
+    "_说明": "Reddit 公开 RSS，不需要凭据。请求密了会 429，所以每次请求之间歇 pause_seconds 秒。",
+    "enabled": true,
+    "subreddits": ["Anki", "medicalschoolanki", "medicalschool", "step1", "MCAT", "languagelearning"]
+  },
+
+  "pause_seconds": 20,
 
   "keywords": [
     "AnkiWeb",
@@ -24,6 +27,16 @@
     "anki sync",
     "media sync"
   ],
+
+  "_skip_if_contains": "命中里含这些字样的直接扔掉：论坛的自动关帖通知、官方的处理回复。",
+  "skip_if_contains": [
+    "This topic was automatically closed",
+    "I restored that to your account",
+    "was removed at the request of"
+  ],
+
+  "_max_age_days": "只看最近这么多天的。太老的帖子早就有人答了，回复没有意义。",
+  "max_age_days": 14,
 
   "daily_limit": 5,
   "database": "radar.sqlite3"

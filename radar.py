@@ -20,7 +20,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-import reddit
+import sources
 from store import Store
 
 HERE = Path(__file__).resolve().parent
@@ -53,7 +53,11 @@ def matches(text, patterns):
 
 
 def collect(config, use_sample):
-    """取回一批候选条目。样例模式不联网。"""
+    """取回一批候选条目。样例模式不联网。
+
+    【一个源坏掉不该让整轮失败】：版块改名、论坛升级、临时限流都会这样，
+    而其它源的结果照样有用。坏掉的那条打印出来，别静悄悄地少一半。
+    """
     if use_sample:
         items = json.loads((HERE / "sample_posts.json").read_text(encoding="utf-8"))
         # 样例里的时间戳写的是"几小时前"，这样每次跑起来都像是刚发的。
@@ -62,36 +66,69 @@ def collect(config, use_sample):
             item["created_utc"] = now - item.pop("hours_ago", 1) * 3600
         return items
 
-    settings = config["reddit"]
-    token = reddit.get_token(
-        settings.get("client_id", ""), settings.get("client_secret", ""),
-        settings["user_agent"],
-    )
+    user_agent = config["user_agent"]
+    pause_seconds = config.get("pause_seconds", 20)
     items = []
-    for subreddit in config["subreddits"]:
-        for kind in ("post", "comment"):
+    first = True
+
+    forum = config.get("anki_forum", {})
+    if forum.get("enabled", True):
+        # 【论坛用关键词搜，一个词一次请求】：那里的人全是 Anki 用户，
+        # 搜索接口直接带摘要，信噪比比按版块翻高得多。
+        for keyword in config["keywords"]:
+            if not first:
+                sources.pause(forum.get("pause_seconds", 3))
+            first = False
             try:
-                items.extend(reddit.fetch(subreddit, token, settings["user_agent"], kind=kind))
-            except reddit.RedditError as exc:
-                # 【一个版块坏掉不该让整轮失败】：版块改名、临时私有化都会这样，
-                # 而其它版块的结果照样有用。
-                print(f"  跳过 r/{subreddit} 的{kind}：{exc}")
+                items.extend(
+                    sources.anki_forum(keyword, user_agent, days=config.get("max_age_days", 14))
+                )
+            except sources.SourceError as exc:
+                print(f"  跳过 Anki 论坛「{keyword}」：{exc}")
+
+    reddit_cfg = config.get("reddit_rss", {})
+    if reddit_cfg.get("enabled", True):
+        # 【Reddit 只走公开 RSS，而且要很克制】：.json 已经 403，.rss 还能用，
+        # 但连发几次就 429。每个请求之间歇 pause_seconds 秒。
+        for subreddit in reddit_cfg.get("subreddits", []):
+            for kind in ("post", "comment"):
+                if not first:
+                    sources.pause(pause_seconds)
+                first = False
+                try:
+                    items.extend(sources.reddit_rss(subreddit, user_agent, kind=kind))
+                except sources.SourceError as exc:
+                    print(f"  跳过 r/{subreddit} 的{kind}：{exc}")
     return items
 
 
 def scan(store, config, use_sample):
     patterns = [(k, pattern_for(k)) for k in config["keywords"] if k.strip()]
     now = int(time.time())
+    # 【太老的直接扔掉】：一条两周前的求助帖，要么早有人答了，要么提问的人已经
+    # 放弃了。回复它没有意义，而它会把今天真正值得看的挤出报告。
+    oldest = now - config.get("max_age_days", 14) * 86400
+    # 【论坛上一半的命中是系统消息和版主回复】：自动关帖通知、"我已经帮你恢复了"
+    # 这类内容里照样有关键词，但它们不是求助，回复它们没有意义。
+    noise = [n.lower() for n in config.get("skip_if_contains", [])]
     added = 0
     seen = 0
+    stale = 0
     for item in collect(config, use_sample):
         seen += 1
-        hit = matches(f"{item['title']}\n{item['body']}", patterns)
+        if item["created_utc"] < oldest:
+            stale += 1
+            continue
+        haystack = f"{item['title']}\n{item['body']}"
+        if any(n in haystack.lower() for n in noise):
+            stale += 1
+            continue
+        hit = matches(haystack, patterns)
         if not hit:
             continue
         if store.add(item, hit, now):
             added += 1
-    return seen, added
+    return seen, added, stale
 
 
 # --- 报告 --------------------------------------------------------------------
@@ -117,6 +154,14 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 """
 
 
+def where(row):
+    """来源标签。【论坛不加 r/】：那个前缀是 Reddit 的写法，套在论坛上会让人以为
+    有一个叫 forums.ankiweb.net 的版块。"""
+    if row.get("source") == "reddit":
+        return f"r/{row['community']}"
+    return row["community"]
+
+
 def ago(seconds):
     hours = max(0, int((time.time() - seconds) // 3600))
     if hours < 1:
@@ -139,7 +184,7 @@ def render(rows, sample):
   <div class="card">
     <a class="title" href="{html.escape(row['permalink'])}" target="_blank" rel="noopener">{html.escape(title)}</a>
     <div class="tags">
-      <span class="tag">r/{html.escape(row['community'])}</span>
+      <span class="tag">{html.escape(where(row))}</span>
       <span class="tag">{'评论' if row['kind'] == 'comment' else '帖子'}</span>
       <span class="tag">{ago(row['posted_at'])}</span>
       {tags}
@@ -183,9 +228,12 @@ def main():
     parser.add_argument("--again", action="store_true", help="重新打开上一份报告")
     parser.add_argument("--stats", action="store_true", help="看各关键词带来了多少条")
     parser.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
+    parser.add_argument("--forum-only", action="store_true", help="只扫 Anki 论坛，不碰 Reddit")
     args = parser.parse_args()
 
     config = load_config()
+    if args.forum_only:
+        config = {**config, "reddit_rss": {**config.get("reddit_rss", {}), "enabled": False}}
     store = Store(HERE / config.get("database", "radar.sqlite3"))
     limit = args.limit or config.get("daily_limit", 5)
 
@@ -204,8 +252,8 @@ def main():
             return
 
         print("扫描中…" + ("（离线样例）" if args.sample else ""))
-        seen, added = scan(store, config, args.sample)
-        print(f"看过 {seen} 条，新收进来 {added} 条")
+        seen, added, stale = scan(store, config, args.sample)
+        print(f"看过 {seen} 条，太老跳过 {stale} 条，新收进来 {added} 条")
 
         rows = store.unreported(limit)
         write_report(rows, args.sample, not args.no_open)

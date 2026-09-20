@@ -66,8 +66,11 @@ class Store:
         【新的在前，不是命中数多的在前】：越新的帖子越可能还没被别人回答过，
         也越可能得到原帖作者的回应。命中三个关键词但发了两周的帖子，价值很低。
         """
+        # 【发帖的排在回帖的前面】：提问的人还在等答案，而一条回复下面通常
+        # 已经有人在答了。同为发帖时，新的在前。
         rows = self.db.execute(
-            "SELECT * FROM posts WHERE reported_at IS NULL ORDER BY posted_at DESC LIMIT ?",
+            "SELECT * FROM posts WHERE reported_at IS NULL"
+            " ORDER BY (kind = 'post') DESC, posted_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
