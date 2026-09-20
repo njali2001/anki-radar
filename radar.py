@@ -20,6 +20,7 @@ import time
 import webbrowser
 from pathlib import Path
 
+import ai
 import sources
 from store import Store
 
@@ -79,6 +80,7 @@ def collect(config, use_sample):
             if not first:
                 sources.pause(forum.get("pause_seconds", 3))
             first = False
+            print(f"  Anki 论坛：{keyword}", flush=True)
             try:
                 items.extend(
                     sources.anki_forum(keyword, user_agent, days=config.get("max_age_days", 14))
@@ -95,6 +97,8 @@ def collect(config, use_sample):
                 if not first:
                     sources.pause(pause_seconds)
                 first = False
+                print(f"  r/{subreddit} 的{'评论' if kind == 'comment' else '帖子'}"
+                      f"（每次请求之间等 {pause_seconds} 秒）", flush=True)
                 try:
                     items.extend(sources.reddit_rss(subreddit, user_agent, kind=kind))
                 except sources.SourceError as exc:
@@ -131,6 +135,57 @@ def scan(store, config, use_sample):
     return seen, added, stale
 
 
+def pick(store, config, limit, use_ai=True):
+    """挑出这次要进报告的几条。返回 (要显示的, 被 AI 判定不相关而跳过的条数)。
+
+    【打过分的都标记成"已报告"，包括被刷掉的】：否则明天会为同样的条目再花一次钱,
+    而它们的分数不会因为过了一夜就变高。
+    """
+    cfg = config.get("ai", {})
+    now = int(time.time())
+
+    if not (use_ai and cfg.get("enabled") and cfg.get("api_key")):
+        rows = store.unreported(limit)
+        if rows:
+            store.mark_reported([r["external_id"] for r in rows], now)
+        return rows, 0
+
+    # 【先取一批候选，再打分，最后才截取】：直接取 limit 条去打分的话，
+    # 万一这几条全被判无关，今天就一条都没有了。
+    candidates = store.unreported(int(cfg.get("candidates", 25)))
+    if not candidates:
+        return [], 0
+
+    print(f"  AI 打分：{len(candidates)} 条候选…", flush=True)
+    try:
+        scores = ai.score(candidates, cfg)
+    except ai.AIError as exc:
+        # 【AI 挂了不能挡住整件事】：退回纯关键词，把原因说出来。
+        print(f"  AI 打分失败（退回关键词模式）：{exc}")
+        rows = candidates[:limit]
+        store.mark_reported([r["external_id"] for r in rows], now)
+        return rows, 0
+
+    store.set_scores(scores)
+    minimum = int(cfg.get("min_score", 2))
+    kept = []
+    for row in candidates:
+        value = scores.get(row["external_id"])
+        if value is None:
+            continue
+        row["ai_score"], row["ai_reason"] = value
+        if value[0] >= minimum:
+            kept.append(row)
+
+    # 分高的在前；同分按时间新的在前（unreported 已经排好序，sort 是稳定的）。
+    kept.sort(key=lambda r: r["ai_score"], reverse=True)
+    shown = kept[:limit]
+
+    # 打过分的全部标记掉：留着它们只会在明天再花一次钱。
+    store.mark_reported([r["external_id"] for r in candidates if r["external_id"] in scores], now)
+    return shown, len(candidates) - len(kept)
+
+
 # --- 报告 --------------------------------------------------------------------
 
 STYLE = """
@@ -152,6 +207,7 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .src { font-weight: 600; }
 .src-forum { background: #1f3346; color: #9cc9f0; }
 .src-reddit { background: #46281f; color: #f0b79c; }
+.ai { background: #2a2440; color: #c3b6f0; }
 .snippet { margin-top: 10px; color: #aeb5c0; font-size: 14.5px; white-space: pre-wrap; }
 .snippet mark, .card a.title mark { background: #3d4d24; color: #dcf5a0; border-radius: 3px;
                                     padding: 0 2px; }
@@ -185,6 +241,16 @@ SOURCE_LABELS = {
     "reddit": ("Reddit", "src-reddit"),
     "ankiforum": ("Anki 论坛", "src-forum"),
 }
+
+
+def score_tag(row):
+    """AI 的判断。【分数和理由一起显示】：只有分数的话，你无从判断该不该信它；
+    有了理由，错判一眼就能看出来，也才知道要不要调提示词。"""
+    value = row.get("ai_score")
+    if value is None:
+        return ""
+    reason = html.escape(row.get("ai_reason") or "")
+    return f'<span class="tag ai">AI {value}/3 · {reason}</span>'
 
 
 def source_tag(row):
@@ -229,6 +295,7 @@ def render(rows, sample):
       <span class="tag">{'评论' if row['kind'] == 'comment' else '帖子'}</span>
       <span class="tag">{ago(row['posted_at'])}</span>
       {tags}
+      {score_tag(row)}
     </div>
     <div class="snippet">{highlight(snippet, hits)}</div>
   </div>""")
@@ -270,6 +337,7 @@ def main():
     parser.add_argument("--stats", action="store_true", help="看各关键词带来了多少条")
     parser.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
     parser.add_argument("--forum-only", action="store_true", help="只扫 Anki 论坛，不碰 Reddit")
+    parser.add_argument("--no-ai", action="store_true", help="这次不用 AI 打分，只按关键词")
     args = parser.parse_args()
 
     config = load_config()
@@ -292,14 +360,14 @@ def main():
             write_report(store.last_report(limit), args.sample, not args.no_open)
             return
 
-        print("扫描中…" + ("（离线样例）" if args.sample else ""))
+        print("扫描中…" + ("（离线样例）" if args.sample else ""), flush=True)
         seen, added, stale = scan(store, config, args.sample)
         print(f"看过 {seen} 条，太老跳过 {stale} 条，新收进来 {added} 条")
 
-        rows = store.unreported(limit)
+        rows, dropped = pick(store, config, limit, use_ai=not args.no_ai)
+        if dropped:
+            print(f"AI 判定不相关，跳过 {dropped} 条")
         write_report(rows, args.sample, not args.no_open)
-        if rows:
-            store.mark_reported([r["external_id"] for r in rows], int(time.time()))
     finally:
         store.close()
 

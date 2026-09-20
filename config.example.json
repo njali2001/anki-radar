@@ -1,43 +1,55 @@
 {
   "_说明": "复制成 config.json 再改。config.json 不进 git。两个数据源都不需要任何凭据。",
-
   "_为什么没有 Reddit API 凭据": "Reddit 2025-11 起关掉了自助注册，要提交工单等人工审批，而且非商业身份申请商业用途是已知的被拒理由。所以这里走公开 RSS，Reddit 那部分另外用 F5Bot 兜着。",
-
   "_user_agent 必须是纯英文": "HTTP 头只允许 ASCII，写中文会报编码错误。把邮箱换成你自己的。",
   "user_agent": "anki-radar/1.0 (personal monitoring; contact: you@example.com)",
-
   "anki_forum": {
     "_说明": "Anki 官方论坛。信噪比最高：那里的人全是 Anki 用户。一个关键词一次请求。",
     "enabled": true,
     "pause_seconds": 3
   },
-
   "reddit_rss": {
     "_说明": "Reddit 公开 RSS，不需要凭据。请求密了会 429，所以每次请求之间歇 pause_seconds 秒。",
     "enabled": true,
-    "subreddits": ["Anki", "medicalschoolanki", "medicalschool", "step1", "MCAT", "languagelearning"]
+    "subreddits": [
+      "Anki",
+      "medicalschoolanki",
+      "medicalschool",
+      "step1",
+      "MCAT",
+      "languagelearning"
+    ]
   },
-
   "pause_seconds": 20,
-
   "keywords": [
-    "AnkiWeb",
     "collection is too large",
-    "self-hosted sync server",
-    "anki sync",
-    "media sync"
+    "too large to send",
+    "sync is slow",
+    "syncing is slow",
+    "sync keeps failing",
+    "stuck on syncing",
+    "media sync",
+    "self-hosted sync server"
   ],
-
   "_skip_if_contains": "命中里含这些字样的直接扔掉：论坛的自动关帖通知、官方的处理回复。",
   "skip_if_contains": [
     "This topic was automatically closed",
     "I restored that to your account",
     "was removed at the request of"
   ],
-
   "_max_age_days": "只看最近这么多天的。太老的帖子早就有人答了，回复没有意义。",
   "max_age_days": 14,
-
   "daily_limit": 5,
-  "database": "radar.sqlite3"
+  "database": "radar.sqlite3",
+  "_keywords": "整词/原句匹配，没有「同时包含 A 和 B」这种逻辑。2026-09-20 收窄过一轮：原来只写 AnkiWeb 一个词时，55 条命中里 54 条来自它，而其中一半是插件公告、TTS 问题这类无关内容。",
+  "_ai": "可选。enabled=true 且填了 api_key 才生效：关键词筛出来的候选再让模型判断「这个人是不是真的卡住了」，只有够分的进报告。没填就退回纯关键词，工具照常能用。Gemini 的 key 在 https://aistudio.google.com/apikey 免费申请。",
+  "ai": {
+    "enabled": false,
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "api_key": "",
+    "candidates": 25,
+    "min_score": 2,
+    "batch_size": 25
+  }
 }

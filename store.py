@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS posts (
     found_at    INTEGER NOT NULL,
     matched     TEXT NOT NULL DEFAULT '',  -- 逗号分隔
     reported_at INTEGER,                   -- 进过哪一次报告
-    verdict     TEXT                       -- 你自己标的：replied / ignored / junk
+    verdict     TEXT,                      -- 你自己标的：replied / ignored / junk
+    ai_score    INTEGER,                   -- 0-3，AI 判断的相关度；NULL = 还没打过分
+    ai_reason   TEXT                       -- AI 给的一句理由
 );
 CREATE INDEX IF NOT EXISTS posts_reported ON posts (reported_at);
 CREATE INDEX IF NOT EXISTS posts_posted   ON posts (posted_at DESC);
@@ -38,6 +40,11 @@ class Store:
         self.db = sqlite3.connect(self.path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        # 【老库要补列】：这个文件在用户机器上，不能每加一个字段就让他删库重来。
+        have = {r["name"] for r in self.db.execute("PRAGMA table_info(posts)")}
+        for column, ddl in (("ai_score", "INTEGER"), ("ai_reason", "TEXT")):
+            if column not in have:
+                self.db.execute(f"ALTER TABLE posts ADD COLUMN {column} {ddl}")
         self.db.commit()
 
     def close(self):
@@ -74,6 +81,14 @@ class Store:
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def set_scores(self, scores):
+        """写回 AI 的打分。{external_id: (score, reason)}"""
+        self.db.executemany(
+            "UPDATE posts SET ai_score = ?, ai_reason = ? WHERE external_id = ?",
+            [(v[0], v[1], k) for k, v in scores.items()],
+        )
+        self.db.commit()
 
     def mark_reported(self, ids, now):
         self.db.executemany(
