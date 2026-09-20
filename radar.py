@@ -390,22 +390,36 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .src-bili { background: #3d2233; color: #f0a8d0; }
 .ai { background: #2a2440; color: #c3b6f0; }
 
-/* 【指示灯就是按钮本身】（2026-09-20 运营者定）：绿 = 这一轮扫过了，灰 = 还没扫。
-   灰的点一下就在后台扫，扫完页面自己更新。不另做一排状态图标——一个东西
-   既表示状态又是操作入口，比"图标 + 旁边一个按钮"少一次找。 */
-.bar { display: flex; gap: 10px; align-items: center; margin: 0 0 26px; flex-wrap: wrap; }
+/* 【一个源一个 tab，状态灯长在 tab 上】（2026-09-20 运营者提）：三个源的量
+   差得远——论坛一天十几条、B站 一周一两条——堆在一页上，短的那个永远要往下翻。
+   tab 上带一个待看条数，哪个源有东西不用切过去也知道。
+
+   【切 tab 不等于开始扫】：扫 Reddit 一轮要四五分钟，如果切过去就自动扫，
+   人只是想看一眼昨天剩下的也得等。所以 tab 只管切换和显示状态，真正的
+   "扫一遍"是面板里那个按钮。 */
+.tabs { display: flex; gap: 8px; align-items: center; margin: 0 0 20px; flex-wrap: wrap; }
+.tab { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+       border: 1px solid #2f3540; border-radius: 999px; padding: 8px 16px;
+       background: #1a1d22; color: #aeb5c0; font: inherit; font-size: 14px; }
+.tab:hover { border-color: #46505f; }
+.tab.on { background: #232830; color: #e8eaed; border-color: #4a5462; }
+.tab .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6472; }
+.tab.done .dot { background: #8fd14f; }
+.tab.busy .dot { background: #e8c35a; animation: pulse 1s infinite; }
+.tab.cooling .dot { background: #c96a4e; }
+/* 待看条数：0 条不显示——一个写着 0 的徽章比没有徽章更吵。 */
+.badge { background: #2f3540; color: #cdd3dc; border-radius: 999px; font-size: 12px;
+         padding: 1px 8px; min-width: 10px; text-align: center; }
+.tab.on .badge { background: #3d4d24; color: #dcf5a0; }
+.panel { display: none; }
+.panel.on { display: block; }
+.panel-head { display: flex; gap: 12px; align-items: center; margin: 0 0 16px; flex-wrap: wrap; }
 .src-btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
-           border: 1px solid #2f3540; border-radius: 999px; padding: 8px 16px;
-           background: #1a1d22; color: #aeb5c0; font: inherit; font-size: 14px; }
+           border: 1px solid #2f3540; border-radius: 999px; padding: 6px 14px;
+           background: #1a1d22; color: #aeb5c0; font: inherit; font-size: 13.5px; }
 .src-btn:hover { border-color: #46505f; }
-.src-btn .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6472; }
-.src-btn.done { color: #cfe8a8; border-color: #3a4a26; }
-.src-btn.done .dot { background: #8fd14f; }
-.src-btn.busy { color: #e8d9a8; border-color: #4a4326; }
-.src-btn.busy .dot { background: #e8c35a; animation: pulse 1s infinite; }
-.src-btn[disabled] { cursor: default; opacity: .75; }
-.src-btn.cooling { color: #e8b0a0; border-color: #4a2f26; }
-.src-btn.cooling .dot { background: #c96a4e; }
+.src-btn[disabled] { cursor: default; opacity: .6; }
+.src-btn.busy { color: #e8d9a8; border-color: #4a4326; animation: pulse 1s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .status { color: #8b93a1; font-size: 13.5px; }
 .err { color: #f0a08a; font-size: 13.5px; }
@@ -603,9 +617,9 @@ def check_ai(config):
 
 
 def render_page(store, config, status):
-    """网页版的整页。两个源各一个按钮、各一份榜单。"""
+    """网页版的整页：一个源一个 tab，各扫各的、各有一份榜单。"""
     limit = config.get("daily_limit", 5)
-    sections, buttons = [], []
+    tabs, panels = [], []
     for source in ("ankiforum", "reddit", "bilibili"):
         if source == "bilibili" and not config.get("bilibili", {}).get("enabled"):
             continue
@@ -623,18 +637,26 @@ def render_page(store, config, status):
             css = "cooling"
         else:
             note = ago_text(last)
-        disabled = " disabled" if (busy or cooling) else ""
-        buttons.append(
-            f'<button class="src-btn {css}" data-source="{source}"{disabled}>'
-            f'<span class="dot"></span>{label}'
-            f'<span class="status">· {note}</span></button>'
-        )
+
         rows = store.pending(source, limit)
         waiting = store.pending_count(source)
+        badge = f'<span class="badge">{waiting}</span>' if waiting else ""
+        tabs.append(
+            f'<button class="tab {css}" data-source="{source}">'
+            f'<span class="dot"></span>{label}{badge}</button>'
+        )
+
+        disabled = " disabled" if (busy or cooling) else ""
         more = f"，还有 {waiting - len(rows)} 条排队" if waiting > len(rows) else ""
-        sections.append(
-            f'<h2>{label}<span class="count">{len(rows)} 条{more}</span></h2>'
+        panels.append(
+            f'<section class="panel" data-source="{source}">'
+            f'<div class="panel-head">'
+            f'<button class="src-btn {css}" data-source="{source}"{disabled}>'
+            f'{"扫描中…" if busy else "扫一遍"}</button>'
+            f'<span class="status">{label} · {note} · 这一轮 {len(rows)} 条{more}</span>'
+            f'</div>'
             + (cards_for(rows) or '<p class="empty">这一轮没有值得看的。</p>')
+            + '</section>'
         )
 
     err = f'<p class="err">出错了：{html.escape(status.get("error") or "")}</p>' if status.get("error") else ""
@@ -644,23 +666,41 @@ def render_page(store, config, status):
 <style>{STYLE}</style></head>
 <body>
 <h1>值得看的帖子</h1>
-<p class="meta">{stamp} · 点标题在新标签页打开原帖 · 灰色的按钮点一下就去扫</p>
-<div class="bar">{''.join(buttons)}<span class="status" id="step">{html.escape(status.get("step") or "")}</span></div>
+<p class="meta">{stamp} · 点标题在新标签页打开原帖 · 每个源各扫各的，切 tab 不会触发扫描</p>
+<div class="tabs">{''.join(tabs)}<span class="status" id="step">{html.escape(status.get("step") or "")}</span></div>
 {err}
-{''.join(sections)}
+{''.join(panels)}
 <p class="note">
   这些是<strong>链接，不是草稿</strong>。回复请用你自己的账号发，提到 LeeAB 时说明身份。<br>
   点【已处理】或【忽略】之后那一条就不再出现；没点的下次打开还在。
   AI 判定不相关的会被直接刷掉，不占位置。
 </p>
 <script>
+const step = document.getElementById("step");
+
+// 【记住停在哪个 tab】：扫完一轮要整页重画（榜单、按钮颜色、时间全都变了），
+// 如果每次都跳回第一个 tab，人刚点的那个源反而看不见了。
+const tabs = [...document.querySelectorAll(".tab")];
+const panels = [...document.querySelectorAll(".panel")];
+function showTab(source) {{
+  tabs.forEach(t => t.classList.toggle("on", t.dataset.source === source));
+  panels.forEach(p => p.classList.toggle("on", p.dataset.source === source));
+  try {{ localStorage.setItem("radar-tab", source); }} catch (e) {{}}
+}}
+tabs.forEach(t => t.addEventListener("click", () => showTab(t.dataset.source)));
+// 正在扫的那个源优先——扫完页面自己重画，人想看的就是它的结果。
+const busyTab = document.querySelector(".tab.busy");
+let want = busyTab && busyTab.dataset.source;
+if (!want) {{ try {{ want = localStorage.getItem("radar-tab"); }} catch (e) {{}} }}
+showTab(tabs.some(t => t.dataset.source === want) ? want : tabs[0].dataset.source);
+
 // 【点一下就在后台扫，页面每秒问一次进度】：Reddit 那边一轮要四五分钟
 // （每个请求之间强制等 20 秒），没有进度的话人会以为它卡死了。
-const step = document.getElementById("step");
 document.querySelectorAll(".src-btn").forEach(btn => {{
   btn.addEventListener("click", async () => {{
     if (btn.disabled) return;
     btn.classList.add("busy");
+    btn.textContent = "扫描中…";
     btn.disabled = true;
     const res = await fetch("/scan?source=" + btn.dataset.source);
     if (!res.ok) {{ step.textContent = "另一个源正在扫，等它扫完"; return; }}
@@ -701,7 +741,18 @@ document.querySelectorAll(".acts").forEach(acts => {{
       const url = "/verdict?id=" + encodeURIComponent(acts.dataset.id)
                 + "&value=" + btn.dataset.value;
       const res = await fetch(url);
-      if (res.ok) {{ card.remove(); }}
+      if (res.ok) {{
+        card.remove();
+        // 【tab 上的条数跟着减】：处理掉一条之后徽章还写着原来的数字，
+        // 人会以为没生效，然后再点一次。
+        const panel = acts.closest(".panel");
+        const badge = document.querySelector(
+          '.tab[data-source="' + panel.dataset.source + '"] .badge');
+        if (badge) {{
+          const left = Math.max(0, parseInt(badge.textContent, 10) - 1);
+          if (left) {{ badge.textContent = left; }} else {{ badge.remove(); }}
+        }}
+      }}
       else {{ card.classList.remove("gone"); step.textContent = "标记失败，刷新页面再试"; }}
     }});
   }});
@@ -713,7 +764,9 @@ async function poll() {{
   }} catch (e) {{
     // 【断线要说出来】：本地服务被关掉之后，页面会永远停在"扫描中"那个闪烁
     // 状态，人以为还在扫，其实早就没人在扫了（2026-09-20 运营者遇到）。
-    document.querySelectorAll(".src-btn.busy").forEach(b => b.classList.remove("busy"));
+    document.querySelectorAll(".src-btn.busy").forEach(b => {{
+      b.classList.remove("busy"); b.disabled = false; b.textContent = "扫一遍";
+    }});
     step.textContent = "和本地服务断开了 —— 刷新页面；打不开就双击 run.bat 重开";
     return;
   }}
