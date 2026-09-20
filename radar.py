@@ -411,6 +411,49 @@ def ago_text(stamp):
     return f"{ago(int(stamp))}扫过"
 
 
+SAMPLE_FOR_CHECK = [
+    {"external_id": "t1", "title": "My collection is too large to sync",
+     "body": "AnkiWeb refuses it, 312MB. What do I do?"},
+    {"external_id": "t2", "title": "I made an Anki add-on for gamification",
+     "body": "It is an arcade with four games."},
+    {"external_id": "t3", "title": "Media sync stuck at 0%",
+     "body": "AnkiDroid keeps failing on 8GB of images"},
+]
+EXPECTED = {"t1": "高", "t2": "低", "t3": "高"}
+
+
+def check_ai(config):
+    """自检：主用和备用各跑一次那三条样例，看模型名、key 对不对，判得准不准。
+
+    【期望值写在代码里】：光打印分数的话，你得自己回忆"插件公告应该是几分"。
+    写出来才能一眼看出是配置坏了还是模型判错了。
+    """
+    base = dict(config.get("ai", {}))
+    fallback = base.pop("fallback", None)
+    targets = [("主用", base)]
+    if fallback:
+        targets.append(("备用", dict(fallback)))
+
+    for label, cfg in targets:
+        name = f"{cfg.get('provider')} / {cfg.get('model')}"
+        if not cfg.get("api_key"):
+            print(f"{label}（{name}）：没有填 api_key，跳过")
+            continue
+        print(f"{label}（{name}）：", end="", flush=True)
+        try:
+            # 单独测这一家，不让它掉到备用上去——否则"备用能用"会被误读成"主用能用"。
+            result = ai.score(SAMPLE_FOR_CHECK, {**cfg, "fallback": None})
+        except ai.AIError as exc:
+            print(f"不可用 —— {exc}")
+            continue
+        print("可用")
+        for ident, (value, reason) in result.items():
+            want = EXPECTED.get(ident, "?")
+            got = "高" if value >= 2 else "低"
+            mark = "对" if got == want else "**判错了**"
+            print(f"    {ident} {value}/3 {mark}  {reason}")
+
+
 def render_page(store, config, status):
     """网页版的整页。两个源各一个按钮、各一份榜单。"""
     limit = config.get("daily_limit", 5)
@@ -514,6 +557,8 @@ def main():
     parser.add_argument("--serve", action="store_true",
                         help="开本地网页版：两个源各一个按钮，点灰色的那个去扫")
     parser.add_argument("--port", type=int, default=8899, help="网页版端口（默认 8899）")
+    parser.add_argument("--check-ai", action="store_true",
+                        help="用三条样例测一下 AI 配置（主用和备用各测一次）")
     args = parser.parse_args()
 
     config = load_config()
@@ -523,6 +568,10 @@ def main():
     limit = args.limit or config.get("daily_limit", 5)
 
     try:
+        if args.check_ai:
+            check_ai(config)
+            return
+
         if args.serve:
             # 【启动时先扫一遍论坛】：它几十秒就完事，人打开页面时就已经有东西看了。
             # Reddit 不自动扫——那要四五分钟，该不该花这个时间由人决定。

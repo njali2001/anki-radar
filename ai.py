@@ -122,19 +122,46 @@ def _ask_openai_compatible(prompt, cfg):
 ASKERS = {"gemini": _ask_gemini, "openai": _ask_openai_compatible, "deepseek": _ask_openai_compatible}
 
 
+def _ask(prompt, cfg):
+    """按配置问一次。主用挂了就换备用。
+
+    【为什么要备用】：免费额度是按天算的，而模型偶尔会 503（2026-09-20 实测
+    Gemini 就来过一次）。两家的免费额度互相独立，主用不行时换一家，比让
+    这一轮直接退回纯关键词要好——退回去意味着噪音全都涌进页面。
+
+    【备用只在"这一家用不了"时才上】：格式错、JSON 解析失败这类问题换一家
+    也一样错，那是提示词的事，不该靠切供应商掩盖过去。
+    """
+    chain = [cfg]
+    fallback = cfg.get("fallback")
+    if fallback and fallback.get("api_key"):
+        chain.append(fallback)
+
+    last = None
+    for index, settings in enumerate(chain):
+        provider = settings.get("provider", "gemini")
+        asker = ASKERS.get(provider)
+        if asker is None:
+            raise AIError(f"不认识的 provider：{provider}（可选 {'/'.join(ASKERS)}）")
+        if not settings.get("api_key"):
+            raise AIError("config.json 的 ai.api_key 是空的")
+        try:
+            return asker(prompt, settings)
+        except AIError as exc:
+            last = exc
+            if index + 1 < len(chain):
+                nxt = chain[index + 1]
+                print(f"  {provider} 不行了（{str(exc)[:80]}），换 "
+                      f"{nxt.get('provider')} / {nxt.get('model')}", flush=True)
+    raise last
+
+
 def score(rows, cfg):
     """给一批条目打分。返回 {external_id: (score, reason)}。
 
     【一次问完，不是一条一问】：几十条塞进一个请求，成本和延迟都低一个数量级。
     条目多的时候分批，免得撑爆上下文。
     """
-    provider = cfg.get("provider", "gemini")
-    asker = ASKERS.get(provider)
-    if asker is None:
-        raise AIError(f"不认识的 provider：{provider}（可选 {'/'.join(ASKERS)}）")
-    if not cfg.get("api_key"):
-        raise AIError("config.json 的 ai.api_key 是空的")
-
     results = {}
     batch_size = int(cfg.get("batch_size", 25))
     for start in range(0, len(rows), batch_size):
@@ -144,7 +171,7 @@ def score(rows, cfg):
             title = (row["title"] or "").strip()
             body = (row["body"] or "").strip()[:500]
             lines.append(json.dumps({"id": index, "title": title, "text": body}, ensure_ascii=False))
-        answer = asker(PROMPT + "\n".join(lines), cfg)
+        answer = _ask(PROMPT + "\n".join(lines), cfg)
         for item in _extract_json(answer):
             try:
                 row = batch[int(item["id"])]

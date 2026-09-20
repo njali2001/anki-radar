@@ -50,6 +50,13 @@
     "api_key": "",
     "candidates": 25,
     "min_score": 2,
-    "batch_size": 25
+    "batch_size": 25,
+    "fallback": {
+      "_说明": "主用挂了（额度用完、503、模型下线）自动换这一家。Groq 免费额度和 Gemini 各算各的。",
+      "provider": "openai",
+      "base_url": "https://api.groq.com/openai/v1",
+      "model": "llama-3.3-70b-versatile",
+      "api_key": ""
+    }
   }
 }
