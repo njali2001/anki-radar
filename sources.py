@@ -32,6 +32,15 @@ class SourceError(RuntimeError):
     pass
 
 
+class RateLimited(SourceError):
+    """【限流要和别的错分开】：版块改名、临时私有化这类错，跳过它继续扫下一个是对的；
+    而被限流时继续扫下一个，等于一边挨罚一边加压——正确的反应是立刻停下。"""
+
+    def __init__(self, message, retry_after=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 def _get(url, user_agent, accept):
     # 【HTTP 头只能是 ASCII】：config.json 里的 user_agent 留了中文占位符时，
     # urllib 会抛一个看不出所以然的 latin-1 编码错误。这里当场说清楚。
@@ -60,10 +69,14 @@ def _get(url, user_agent, accept):
                 print(f"  被限流，等 {wait} 秒再试一次…")
                 time.sleep(wait)
                 continue
-            hint = ""
             if exc.code == 429:
-                hint = "（还是被限流：把 config.json 里的 pause_seconds 调大，或者过一阵再跑）"
-            elif exc.code == 403:
+                wait = int(exc.headers.get("Retry-After") or 0) or None
+                raise RateLimited(
+                    "被限流了（HTTP 429）。把 config.json 里的 pause_seconds 调大，"
+                    "或者过一阵再扫。", retry_after=wait,
+                ) from exc
+            hint = ""
+            if exc.code == 403:
                 hint = "（这个端点已经不对匿名访问开放了）"
             raise SourceError(f"HTTP {exc.code}{hint}：{url}") from exc
         except urllib.error.URLError as exc:

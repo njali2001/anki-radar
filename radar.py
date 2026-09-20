@@ -99,7 +99,9 @@ def collect(config, use_sample, only=None, progress=None):
         # 【Reddit 只走公开 RSS，而且要很克制】：.json 已经 403，.rss 还能用，
         # 但连发几次就 429。每个请求之间歇 pause_seconds 秒。
         for subreddit in reddit_cfg.get("subreddits", []):
-            for kind in ("post", "comment"):
+            # 【评论默认不扫】：帖子和评论各要一次请求，扫评论等于把请求数翻倍，
+            # 而限流正是按请求数算的。真需要的话在 config 里打开 include_comments。
+            for kind in (("post", "comment") if reddit_cfg.get("include_comments") else ("post",)):
                 if not first:
                     sources.pause(pause_seconds)
                 first = False
@@ -107,9 +109,24 @@ def collect(config, use_sample, only=None, progress=None):
                     f"（每次请求之间等 {pause_seconds} 秒）")
                 try:
                     items.extend(sources.reddit_rss(subreddit, user_agent, kind=kind))
+                except sources.RateLimited as exc:
+                    # 【限流就整轮停下】（2026-09-20 运营者要求）：接着扫下一个版块
+                    # 只会让冷却时间更长。已经取到的挂在异常上带出去照常入库——
+                    # 它们已经花掉了请求配额，扔掉才是浪费。
+                    say(f"被限流，这一轮 Reddit 到此为止（已取到 {len(items)} 条）")
+                    exc.collected = items
+                    raise
                 except sources.SourceError as exc:
                     print(f"  跳过 r/{subreddit} 的{kind}：{exc}")
     return items
+
+
+class ScanRateLimited(RuntimeError):
+    """这一轮因为限流提前结束了。"""
+
+    def __init__(self, retry_after=None):
+        super().__init__("被限流，本轮提前结束")
+        self.retry_after = retry_after
 
 
 def scan(store, config, use_sample, only=None, progress=None):
@@ -124,7 +141,13 @@ def scan(store, config, use_sample, only=None, progress=None):
     added = 0
     seen = 0
     stale = 0
-    for item in collect(config, use_sample, only=only, progress=progress):
+    limited = None
+    try:
+        batch = collect(config, use_sample, only=only, progress=progress)
+    except sources.RateLimited as exc:
+        # 已经取回来的那部分照样入库（collect 把它们挂在异常上带出来）。
+        batch, limited = getattr(exc, "collected", []), exc
+    for item in batch:
         seen += 1
         if item["created_utc"] < oldest:
             stale += 1
@@ -138,12 +161,40 @@ def scan(store, config, use_sample, only=None, progress=None):
             continue
         if store.add(item, hit, now):
             added += 1
+    if limited is not None:
+        raise ScanRateLimited(getattr(limited, "retry_after", None))
     return seen, added, stale
+
+
+COOLDOWN_SECONDS = 900   # 被限流之后冷静 15 分钟再说
+
+
+def cooldown_left(store, source):
+    """这个源还要等多久才能再扫。0 = 现在就可以。"""
+    until = store.get_meta(f"cooldown_{source}")
+    # 【用 float 再取整】：存进去的可能是 time.time() 那种带小数的值，
+    # 直接 int("1789928079.09") 会抛 ValueError，而这条路径在渲染页面时会走到——
+    # 一个本来只是"要不要禁用按钮"的小问题，会变成整页打不开。
+    return max(0, int(float(until)) - int(time.time())) if until else 0
 
 
 def scan_source(store, config, source, progress=None):
     """网页版点一个按钮时走的路径：只扫这个源，然后给这个源出一批。"""
-    seen, added, stale = scan(store, config, False, only=source, progress=progress)
+    left = cooldown_left(store, source)
+    if left:
+        raise RuntimeError(f"上一轮被限流了，还要等 {left // 60 + 1} 分钟")
+
+    try:
+        seen, added, stale = scan(store, config, False, only=source, progress=progress)
+    except ScanRateLimited as exc:
+        # 【进冷却，别让人一气之下连点几次】：对方给了 Retry-After 就听它的，
+        # 没给就默认 15 分钟。这期间按钮是灰的，点了也只会告诉你还剩几分钟。
+        wait = exc.retry_after or COOLDOWN_SECONDS
+        store.set_meta(f"cooldown_{source}", int(time.time()) + wait)
+        # 已经取到的那部分照常出榜单——这一轮不是白跑的。
+        pick_for(store, config, config.get("daily_limit", 5), source)
+        raise RuntimeError(f"被限流，已停止扫描；{wait // 60 + 1} 分钟后可以再试") from exc
+
     if progress:
         progress("AI 打分…" if config.get("ai", {}).get("enabled") else "整理结果…")
     pick_for(store, config, config.get("daily_limit", 5), source)
@@ -273,6 +324,8 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .src-btn.busy { color: #e8d9a8; border-color: #4a4326; }
 .src-btn.busy .dot { background: #e8c35a; animation: pulse 1s infinite; }
 .src-btn[disabled] { cursor: default; opacity: .75; }
+.src-btn.cooling { color: #e8b0a0; border-color: #4a2f26; }
+.src-btn.cooling .dot { background: #c96a4e; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .status { color: #8b93a1; font-size: 13.5px; }
 .err { color: #f0a08a; font-size: 13.5px; }
@@ -469,12 +522,22 @@ def render_page(store, config, status):
         label = {"ankiforum": "Anki 论坛", "reddit": "Reddit"}[source]
         last = store.get_meta(f"last_scan_{source}")
         busy = status.get("busy") == source
+        cooling = cooldown_left(store, source)
         css = "busy" if busy else ("done" if last else "")
+        if busy:
+            note = "扫描中…"
+        elif cooling:
+            # 【冷却时按钮是灰的、点不动】：被限流之后最要命的反应是一气之下连点几次，
+            # 那只会把冷却时间拖得更长。
+            note = f"限流冷却中，还有 {cooling // 60 + 1} 分钟"
+            css = "cooling"
+        else:
+            note = ago_text(last)
+        disabled = " disabled" if (busy or cooling) else ""
         buttons.append(
-            f'<button class="src-btn {css}" data-source="{source}"'
-            f'{" disabled" if busy else ""}>'
+            f'<button class="src-btn {css}" data-source="{source}"{disabled}>'
             f'<span class="dot"></span>{label}'
-            f'<span class="status">· {"扫描中…" if busy else ago_text(last)}</span></button>'
+            f'<span class="status">· {note}</span></button>'
         )
         rows = store.pending(source, limit)
         waiting = store.pending_count(source)

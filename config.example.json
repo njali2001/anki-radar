@@ -18,7 +18,9 @@
       "step1",
       "MCAT",
       "languagelearning"
-    ]
+    ],
+    "_include_comments": "扫评论会让请求数翻倍，而限流按请求数算。默认只扫帖子。",
+    "include_comments": false
   },
   "pause_seconds": 20,
   "keywords": [
