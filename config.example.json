@@ -20,7 +20,9 @@
       "languagelearning"
     ],
     "_include_comments": "扫评论会让请求数翻倍，而限流按请求数算。默认只扫帖子。",
-    "include_comments": false
+    "include_comments": false,
+    "_min_interval_minutes": "两次扫描之间至少隔这么久，在那之前按钮是灰的。Reddit 一轮要四五分钟，一小时内再扫一遍，取回来的基本是同一批。",
+    "min_interval_minutes": 60
   },
   "pause_seconds": 20,
   "keywords": [
@@ -89,6 +91,8 @@
     "max_age_days": 180,
     "_max_videos_for_comments": "匿名只能读到每个视频最新 3 条评论（再往下翻要登录），所以靠多看几个视频来铺开。每个视频一次请求。",
     "_min_score": "B站 的量很小，门槛比别的源低一档：1 分是「提到了同步，但看不出他正卡着」，在 Reddit 上是噪音，在这里值得看一眼。0 分（广告、无关）照样刷掉。",
-    "min_score": 1
+    "min_score": 1,
+    "_min_interval_minutes": "B站 上 Anki 是冷门话题，评论隔几天才来一条，半天扫一次已经足够密。",
+    "min_interval_minutes": 360
   }
 }

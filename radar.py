@@ -242,11 +242,34 @@ def cooldown_left(store, source):
     return max(0, int(float(until)) - int(time.time())) if until else 0
 
 
+def interval_left(store, config, source):
+    """距离"可以再扫一次"还差多少秒。0 = 现在就可以。
+
+    【和限流冷却是两回事】：冷却是挨罚之后的惩罚期，只在被限流之后才有；间隔是
+    平时的节制——Reddit 和 B站 的内容本来就是以小时计地慢慢来，隔五分钟再扫一
+    遍，花掉的是请求配额，换回来的是同一批东西。把按钮灰掉，人就不会去点。
+
+    论坛不设间隔：它一轮只有几秒钟，一天也确实有十几条新帖，想扫就扫。
+    """
+    section = SOURCE_CONFIG_KEY.get(source)
+    minutes = config.get(section, {}).get("min_interval_minutes") if section else None
+    last = store.get_meta(f"last_scan_{source}")
+    if not minutes or not last:
+        return 0
+    return max(0, int(last) + int(minutes) * 60 - int(time.time()))
+
+
 def scan_source(store, config, source, progress=None):
     """网页版点一个按钮时走的路径：只扫这个源，然后给这个源出一批。"""
     left = cooldown_left(store, source)
     if left:
         raise RuntimeError(f"上一轮被限流了，还要等 {left // 60 + 1} 分钟")
+
+    # 【服务端也要拦一道】：页面上按钮是灰的，但页面可以刷新，也可以直接敲
+    # /scan?source=…。真正管住请求数的是这里，不是那个 disabled 属性。
+    left = interval_left(store, config, source)
+    if left:
+        raise RuntimeError(f"刚扫过，{left // 60 + 1} 分钟后可以再扫")
 
     try:
         seen, added, stale = scan(store, config, False, only=source, progress=progress)
@@ -411,6 +434,8 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .badge { background: #2f3540; color: #cdd3dc; border-radius: 999px; font-size: 12px;
          padding: 1px 8px; min-width: 10px; text-align: center; }
 .tab.on .badge { background: #3d4d24; color: #dcf5a0; }
+.badge.zero { background: transparent; color: #5a6472; }
+.tab.on .badge.zero { background: transparent; color: #8b93a1; }
 .panel { display: none; }
 .panel.on { display: block; }
 .panel-head { display: flex; gap: 12px; align-items: center; margin: 0 0 16px; flex-wrap: wrap; }
@@ -573,6 +598,25 @@ def ago_text(stamp):
     return f"{ago(int(stamp))}扫过"
 
 
+def last_scan_text(stamp):
+    """【要准确时刻，不只是"3 分钟前"】（2026-09-20 运营者提）：相对时间读着顺，
+    但判断"这一批是不是今天早上那轮的结果"时，要的是几点几分。两个都给。
+    """
+    if not stamp:
+        return "还没扫过"
+    when = time.strftime("%m-%d %H:%M", time.localtime(int(stamp)))
+    # 【这里按分钟算】：ago() 是按小时取整的，那对帖子年龄够用（一条四十分钟前
+    # 的帖子说"刚刚"没问题），但"上次扫描 18:43（刚刚）"就自相矛盾了。
+    minutes = max(0, int((time.time() - int(stamp)) // 60))
+    if minutes < 1:
+        rel = "刚刚"
+    elif minutes < 60:
+        rel = f"{minutes} 分钟前"
+    else:
+        rel = ago(int(stamp))
+    return f"上次扫描 {when}（{rel}）"
+
+
 SAMPLE_FOR_CHECK = [
     {"external_id": "t1", "title": "My collection is too large to sync",
      "body": "AnkiWeb refuses it, 312MB. What do I do?"},
@@ -640,20 +684,26 @@ def render_page(store, config, status):
 
         rows = store.pending(source, limit)
         waiting = store.pending_count(source)
-        badge = f'<span class="badge">{waiting}</span>' if waiting else ""
+        # 【0 也要显示】（2026-09-20 运营者定）：没有徽章和"这个源确实是 0 条"
+        # 长得一样，但意思差很多——后者是看过了之后的结论。
+        badge = f'<span class="badge{"" if waiting else " zero"}">{waiting}</span>' 
         tabs.append(
             f'<button class="tab {css}" data-source="{source}">'
             f'<span class="dot"></span>{label}{badge}</button>'
         )
 
-        disabled = " disabled" if (busy or cooling) else ""
+        waiting_secs = 0 if busy else interval_left(store, config, source)
+        if waiting_secs:
+            note = f"离下次可扫还有 {waiting_secs // 60 + 1} 分钟"
+        disabled = " disabled" if (busy or cooling or waiting_secs) else ""
         more = f"，还有 {waiting - len(rows)} 条排队" if waiting > len(rows) else ""
         panels.append(
             f'<section class="panel" data-source="{source}">'
             f'<div class="panel-head">'
             f'<button class="src-btn {css}" data-source="{source}"{disabled}>'
             f'{"扫描中…" if busy else "扫一遍"}</button>'
-            f'<span class="status">{label} · {note} · 这一轮 {len(rows)} 条{more}</span>'
+            f'<span class="status">{last_scan_text(last)} · 这一轮 {len(rows)} 条{more}'
+            f'{" · " + note if (busy or cooling or waiting_secs) else ""}</span>'
             f'</div>'
             + (cards_for(rows) or '<p class="empty">这一轮没有值得看的。</p>')
             + '</section>'

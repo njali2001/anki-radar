@@ -67,7 +67,14 @@ tabs never starts a scan — a Reddit pass takes minutes, and wanting to read
 yesterday's leftovers should not cost that. Scanning is the button inside the
 tab. The Anki forum is scanned on startup (seconds); Reddit and Bilibili wait for
 a click, because both need a long pause between requests. The page remembers
-which tab you were on, so the reload after a scan leaves you where you were. Each post has **写要点 / 已处理 / 忽略**
+which tab you were on, so the reload after a scan leaves you where you were.
+
+Each tab states when that source was last scanned, to the minute. Reddit and
+Bilibili also have a minimum interval between scans (`min_interval_minutes`):
+until it has passed, the scan button is greyed out and the server refuses the
+request anyway, because a greyed-out button is a hint and the page can be
+reloaded. Scanning either of them again within the hour spends requests to fetch
+the same posts back. The forum has no interval — a pass there takes seconds. Each post has **写要点 / 已处理 / 忽略**
 (notes / done / ignore) buttons: what you act on disappears, what you don't is
 still there next time.
 
