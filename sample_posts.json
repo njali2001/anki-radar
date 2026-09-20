@@ -1,0 +1,82 @@
+[
+  {
+    "external_id": "reddit:t3_sample01",
+    "kind": "post",
+    "community": "Anki",
+    "title": "My collection is too large to sync — what are my options?",
+    "body": "I've been adding cards for four years and today Anki told me the collection file is too large to send to AnkiWeb (312MB > 250MB). I don't want to delete anything. Is there a way around this other than splitting the profile?",
+    "author": "sample_user_a",
+    "permalink": "https://www.reddit.com/r/Anki/comments/sample01/",
+    "hours_ago": 2
+  },
+  {
+    "external_id": "reddit:t1_sample02",
+    "kind": "comment",
+    "community": "medicalschoolanki",
+    "title": "",
+    "body": "Same here. AnkiWeb sync takes 40 minutes for me every time I add images, and half the time it just times out. I'm in Brazil, maybe that's why.",
+    "author": "sample_user_b",
+    "permalink": "https://www.reddit.com/r/medicalschoolanki/comments/sample02/",
+    "hours_ago": 5
+  },
+  {
+    "external_id": "reddit:t3_sample03",
+    "kind": "post",
+    "community": "Anki",
+    "title": "Anyone running a self-hosted sync server? Worth it?",
+    "body": "I keep hitting slow media sync and I'm thinking about hosting the sync server myself on a VPS. Has anyone done this and regretted it? How much maintenance is it really?",
+    "author": "sample_user_c",
+    "permalink": "https://www.reddit.com/r/Anki/comments/sample03/",
+    "hours_ago": 9
+  },
+  {
+    "external_id": "reddit:t3_sample04",
+    "kind": "post",
+    "community": "step1",
+    "title": "Anki sync is so slow on hospital wifi",
+    "body": "Takes forever and then fails. Any tips? I have about 8GB of media in my deck.",
+    "author": "sample_user_d",
+    "permalink": "https://www.reddit.com/r/step1/comments/sample04/",
+    "hours_ago": 14
+  },
+  {
+    "external_id": "reddit:t3_sample05",
+    "kind": "post",
+    "community": "MCAT",
+    "title": "Best chair for long study sessions?",
+    "body": "Completely unrelated to syncing. This one exists so the filter has something to reject.",
+    "author": "sample_user_e",
+    "permalink": "https://www.reddit.com/r/MCAT/comments/sample05/",
+    "hours_ago": 3
+  },
+  {
+    "external_id": "reddit:t1_sample06",
+    "kind": "comment",
+    "community": "languagelearning",
+    "title": "",
+    "body": "I gave up on AnkiWeb and just use a USB stick between my two computers now. It's 2026 and I'm using a USB stick.",
+    "author": "sample_user_f",
+    "permalink": "https://www.reddit.com/r/languagelearning/comments/sample06/",
+    "hours_ago": 20
+  },
+  {
+    "external_id": "reddit:t3_sample07",
+    "kind": "post",
+    "community": "Anki",
+    "title": "Does AnkiWeb have a size limit for media?",
+    "body": "My deck folder is 22GB. Will AnkiWeb take that or do I need to trim it down first?",
+    "author": "sample_user_g",
+    "permalink": "https://www.reddit.com/r/Anki/comments/sample07/",
+    "hours_ago": 26
+  },
+  {
+    "external_id": "reddit:t3_sample08",
+    "kind": "post",
+    "community": "medicalschool",
+    "title": "Which laptop for M1 year?",
+    "body": "Another irrelevant one. No keywords here at all.",
+    "author": "sample_user_h",
+    "permalink": "https://www.reddit.com/r/medicalschool/comments/sample08/",
+    "hours_ago": 30
+  }
+]

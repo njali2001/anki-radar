@@ -1,0 +1,30 @@
+{
+  "_说明": "复制成 config.json 再改。config.json 不进 git，凭据只留在本机。",
+
+  "reddit": {
+    "_怎么拿": "https://www.reddit.com/prefs/apps → create another app → 类型选 script。不需要账号密码。",
+    "client_id": "",
+    "client_secret": "",
+    "user_agent": "anki-radar/1.0 (by /u/你的Reddit用户名)"
+  },
+
+  "subreddits": [
+    "Anki",
+    "medicalschoolanki",
+    "medicalschool",
+    "step1",
+    "MCAT",
+    "languagelearning"
+  ],
+
+  "keywords": [
+    "AnkiWeb",
+    "collection is too large",
+    "self-hosted sync server",
+    "anki sync",
+    "media sync"
+  ],
+
+  "daily_limit": 5,
+  "database": "radar.sqlite3"
+}

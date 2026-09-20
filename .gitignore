@@ -1,0 +1,5 @@
+config.json
+radar.sqlite3
+report.html
+__pycache__/
+*.pyc
