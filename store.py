@@ -178,6 +178,22 @@ class Store:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def reconsider(self, source, minimum):
+        """把分数够得上新门槛、却在旧门槛下被刷掉的放回待看。
+
+        【放宽门槛要能追溯既往】：分数是当时就存下来的，一条 1 分的记录不会因为
+        我们改了主意就变成 2 分；既然现在 1 分算数，它就该回到榜单里，而不是永远
+        卡在"上一版的标准"里。重新打分要再花一次钱，也不会得到新东西。
+        """
+        with self.lock:
+            cursor = self.db.execute(
+                "UPDATE posts SET verdict = NULL, reported_at = NULL "
+                "WHERE source = ? AND verdict = 'ai_rejected' AND ai_score >= ?",
+                (source, minimum),
+            )
+            self.db.commit()
+            return cursor.rowcount
+
     def mark_rejected(self, ids):
         """被 AI 判定不相关的：留在库里（--stats 要用），但不再出现在任何报告里。"""
         with self.lock:

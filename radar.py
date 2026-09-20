@@ -265,6 +265,21 @@ def scan_source(store, config, source, progress=None):
     return seen, added, stale
 
 
+def min_score_for(config, source):
+    """这个源要几分才留下。
+
+    【门槛按源分开】：同样是 1 分（"提到了同步，但看不出他正卡着"），在 Reddit
+    上是噪音——那边一天几十条候选，放进来只会把真正求助的挤下去；而 B站 上
+    Anki 是冷门话题，一轮下来统共十几条候选，一条"下载 anki 好多年今天才搞明白
+    同步咋用"也值得人看一眼。量少的源可以把网张大一点，反正也看得过来。
+    """
+    section = SOURCE_CONFIG_KEY.get(source)
+    override = config.get(section, {}).get("min_score") if section else None
+    if override is not None:
+        return int(override)
+    return int(config.get("ai", {}).get("min_score", 2))
+
+
 def pick_for(store, config, limit, source, use_ai=True):
     """给某一个源挑出这一批。被 AI 刷掉的标成 ai_rejected，不再出现在任何榜单里。"""
     cfg = config.get("ai", {})
@@ -287,7 +302,7 @@ def pick_for(store, config, limit, source, use_ai=True):
         return store.pending(source, limit)
 
     store.set_scores(scores)
-    minimum = int(cfg.get("min_score", 2))
+    minimum = min_score_for(config, source)
     rejected = [
         row["external_id"] for row in candidates
         if (scores.get(row["external_id"]) or (minimum, ""))[0] < minimum
@@ -730,6 +745,9 @@ def main():
     parser.add_argument("--limit", type=int, help="这份报告里最多几条")
     parser.add_argument("--again", action="store_true", help="重新打开上一份报告")
     parser.add_argument("--stats", action="store_true", help="看各关键词带来了多少条")
+    parser.add_argument("--reconsider", metavar="源",
+                        help="调低门槛后，把分数够新门槛、当初被刷掉的放回榜单"
+                             "（ankiforum / reddit / bilibili）")
     parser.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
     parser.add_argument("--forum-only", action="store_true", help="只扫 Anki 论坛，不碰 Reddit")
     parser.add_argument("--no-ai", action="store_true", help="这次不用 AI 打分，只按关键词")
@@ -757,6 +775,17 @@ def main():
             ui.serve(store, config, scan_source, render_page,
                      port=args.port, open_browser=not args.no_open,
                      warm_source="ankiforum")
+            return
+
+        if args.reconsider:
+            source = args.reconsider
+            if source not in SOURCE_CONFIG_KEY:
+                print(f"不认识这个源：{source}（认 {'/'.join(SOURCE_CONFIG_KEY)}）")
+                return
+            minimum = min_score_for(config, source)
+            back = store.reconsider(source, minimum)
+            print(f"{SOURCE_LABELS[source][0]} 现在的门槛是 {minimum} 分，"
+                  f"放回 {back} 条当初被刷掉的。")
             return
 
         if args.stats:

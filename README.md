@@ -98,6 +98,10 @@ any credentials.
                     size"; only 2+ is shown, with a one-line reason. Without a
                     key the tool falls back to keywords alone. A second provider
                     can be listed as a fallback for when the first one is busy.
+                    A source may set its own min_score: a thin source can afford
+                    a lower bar than a busy one, where a weak hit only crowds out
+                    a real one. `--reconsider <source>` brings back items that an
+                    earlier, stricter bar had dropped.
     bilibili        search terms (which videos to look at) and keywords (which
                     of them are worth reading comments under, and which comments
                     to keep). max_videos_for_comments caps the requests: one per
