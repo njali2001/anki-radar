@@ -3,3 +3,4 @@ radar.sqlite3
 report.html
 __pycache__/
 *.pyc
+radar-sample.sqlite3

@@ -61,9 +61,10 @@ Typical volume: a handful of posts per day. This is a reading list, not a feed.
     run.bat                      open the local page          (Windows)
     python radar.py --serve      same thing                   (any OS)
 
-The page runs on 127.0.0.1 and gives each source a tab, with a badge for how
-many items are waiting there and a dot for whether it has been scanned. Switching
-tabs never starts a scan — a Reddit pass takes minutes, and wanting to read
+The page runs on 127.0.0.1. The left column lists the sources — each with how
+many items are waiting, when it was last scanned, whether it can be scanned right
+now, and its own scan button — and the right column shows the selected source's
+list. Clicking a source switches the list; it never starts a scan — a Reddit pass takes minutes, and wanting to read
 yesterday's leftovers should not cost that. Scanning is the button inside the
 tab. The Anki forum is scanned on startup (seconds); Reddit and Bilibili wait for
 a click, because both need a long pause between requests. The page remembers
@@ -87,6 +88,7 @@ One-off runs without the page:
 
     python radar.py --forum-only --no-open   scan the forum, write report.html
     python radar.py --sample                 offline sample data, no network
+                                             (kept in its own database file)
     python radar.py --again                  reopen the last report
     python radar.py --stats                  which keyword produced how many hits
 

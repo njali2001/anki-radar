@@ -413,32 +413,50 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .src-bili { background: #3d2233; color: #f0a8d0; }
 .ai { background: #2a2440; color: #c3b6f0; }
 
-/* 【一个源一个 tab，状态灯长在 tab 上】（2026-09-20 运营者提）：三个源的量
-   差得远——论坛一天十几条、B站 一周一两条——堆在一页上，短的那个永远要往下翻。
-   tab 上带一个待看条数，哪个源有东西不用切过去也知道。
+/* 【三个源常驻在左边，右边只放选中那个源的榜单】（2026-09-20 运营者定）：
+   原来是 tab，不切过去就不知道那个源是什么情况——而"哪个源有东西、上次什么
+   时候扫的、现在能不能扫"恰恰是每次打开页面最先要看的三件事。侧栏把这三件事
+   一直摆在眼前，右边保持单列，一条一条读。
 
-   【切 tab 不等于开始扫】：扫 Reddit 一轮要四五分钟，如果切过去就自动扫，
-   人只是想看一眼昨天剩下的也得等。所以 tab 只管切换和显示状态，真正的
-   "扫一遍"是面板里那个按钮。 */
-.tabs { display: flex; gap: 8px; align-items: center; margin: 0 0 20px; flex-wrap: wrap; }
-.tab { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
-       border: 1px solid #2f3540; border-radius: 999px; padding: 8px 16px;
-       background: #1a1d22; color: #aeb5c0; font: inherit; font-size: 14px; }
-.tab:hover { border-color: #46505f; }
-.tab.on { background: #232830; color: #e8eaed; border-color: #4a5462; }
-.tab .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6472; }
-.tab.done .dot { background: #8fd14f; }
-.tab.busy .dot { background: #e8c35a; animation: pulse 1s infinite; }
-.tab.cooling .dot { background: #c96a4e; }
-/* 待看条数：0 条不显示——一个写着 0 的徽章比没有徽章更吵。 */
-.badge { background: #2f3540; color: #cdd3dc; border-radius: 999px; font-size: 12px;
-         padding: 1px 8px; min-width: 10px; text-align: center; }
-.tab.on .badge { background: #3d4d24; color: #dcf5a0; }
+   【右边仍然一次只显示一个源】：三个源的语气和该给的答案深度不一样，混在一起
+   读要来回切换脑子；而且量小的那个会被量大的埋掉。 */
+.wrap { display: flex; gap: 26px; align-items: flex-start; }
+.side { flex: 0 0 240px; width: 240px; position: sticky; top: 28px;
+        display: flex; flex-direction: column; gap: 10px; }
+.main { flex: 1; min-width: 0; max-width: 860px; }
+.src-item { border: 1px solid #262a31; border-radius: 12px; padding: 12px 14px;
+            background: #1a1d22; cursor: pointer; }
+.src-item:hover { border-color: #3a424e; }
+/* 选中的那个用左边一道亮边，而不是整块变色：整块变色会和"正在扫"那个黄点抢
+   注意力，而这两件事要能同时看清。 */
+.src-item.on { background: #1e222a; border-color: #46505f; box-shadow: inset 3px 0 0 #8fd14f; }
+.src-name { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: #cdd3dc; }
+.src-item .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6472; flex: none; }
+.src-item.done .dot { background: #8fd14f; }
+.src-item.busy .dot { background: #e8c35a; animation: pulse 1s infinite; }
+.src-item.cooling .dot { background: #c96a4e; }
+.src-when { color: #8b93a1; font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
+.src-when.hold { color: #e8b0a0; }
+.idle-step { font-size: 12.5px; }
+.badge { margin-left: auto; background: #2f3540; color: #cdd3dc; border-radius: 999px;
+         font-size: 12px; padding: 1px 9px; }
+.src-item.on .badge { background: #3d4d24; color: #dcf5a0; }
 .badge.zero { background: transparent; color: #5a6472; }
-.tab.on .badge.zero { background: transparent; color: #8b93a1; }
+.src-item.on .badge.zero { background: transparent; color: #8b93a1; }
 .panel { display: none; }
 .panel.on { display: block; }
-.panel-head { display: flex; gap: 12px; align-items: center; margin: 0 0 16px; flex-wrap: wrap; }
+.src-btn { display: block; width: 100%; margin-top: 10px; cursor: pointer;
+           border: 1px solid #2f3540; border-radius: 8px; padding: 6px 10px;
+           background: #171a1f; color: #aeb5c0; font: inherit; font-size: 13px; }
+.src-btn:hover { border-color: #46505f; color: #cdd3dc; }
+.src-btn[disabled] { cursor: default; opacity: .45; }
+.src-btn.busy { color: #e8d9a8; border-color: #4a4326; animation: pulse 1s infinite; }
+/* 窄窗口：侧栏放平成一排，别把正文挤成一条缝。 */
+@media (max-width: 880px) {
+  .wrap { flex-direction: column; }
+  .side { position: static; width: auto; flex: none; flex-direction: row; flex-wrap: wrap; }
+  .src-item { flex: 1 1 200px; }
+}
 .src-btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
            border: 1px solid #2f3540; border-radius: 999px; padding: 6px 14px;
            background: #1a1d22; color: #aeb5c0; font: inherit; font-size: 13.5px; }
@@ -448,7 +466,7 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .status { color: #8b93a1; font-size: 13.5px; }
 .err { color: #f0a08a; font-size: 13.5px; }
-h2 { font-size: 16px; margin: 30px 0 12px; color: #cdd3dc; font-weight: 600; }
+h2 { font-size: 16px; margin: 0 0 14px; color: #cdd3dc; font-weight: 600; }
 h2 .count { color: #8b93a1; font-weight: 400; font-size: 13.5px; margin-left: 6px; }
 .snippet { margin-top: 10px; color: #aeb5c0; font-size: 14.5px; white-space: pre-wrap; }
 .snippet mark, .card a.title mark { background: #3d4d24; color: #dcf5a0; border-radius: 3px;
@@ -546,8 +564,11 @@ def ago(seconds):
 def cards_for(rows):
     cards = []
     for row in rows:
-        title = row["title"] or (row["body"][:90] + "…")
-        snippet = (row["body"] or "")[:400]
+        # 【没有标题的（B站 评论就没有）用正文开头当标题，但别把同一句话再抄一遍】：
+        # 评论短的时候，标题和正文是同一句，卡片上就出现两遍，读的人会以为是两条。
+        body = row["body"] or ""
+        title = row["title"] or (body[:90] + "…" if len(body) > 90 else body)
+        snippet = "" if (not row["title"] and len(body) <= 90) else body[:400]
         hits = [k for k in row["matched"].split(",") if k.strip()]
         tags = "".join(
             f'<span class="tag hit">{html.escape(k)}</span>'
@@ -564,7 +585,7 @@ def cards_for(rows):
       {tags}
       {score_tag(row)}
     </div>
-    <div class="snippet">{highlight(snippet, hits)}</div>
+    {f'<div class="snippet">{highlight(snippet, hits)}</div>' if snippet else ""}
     <div class="acts" data-id="{html.escape(row['external_id'])}">
       <button class="act brief-btn">写要点</button>
       <button class="act done" data-value="done">已处理</button>
@@ -664,9 +685,9 @@ def check_ai(config):
 
 
 def render_page(store, config, status):
-    """网页版的整页：一个源一个 tab，各扫各的、各有一份榜单。"""
+    """网页版的整页：左边一列源，右边选中那个源的榜单。"""
     limit = config.get("daily_limit", 5)
-    tabs, panels = [], []
+    side, panels = [], []
     for source in ("ankiforum", "reddit", "bilibili"):
         if source == "bilibili" and not config.get("bilibili", {}).get("enabled"):
             continue
@@ -689,31 +710,47 @@ def render_page(store, config, status):
         waiting = store.pending_count(source)
         # 【0 也要显示】（2026-09-20 运营者定）：没有徽章和"这个源确实是 0 条"
         # 长得一样，但意思差很多——后者是看过了之后的结论。
-        badge = f'<span class="badge{"" if waiting else " zero"}">{waiting}</span>' 
-        tabs.append(
-            f'<button class="tab {css}" data-source="{source}">'
-            f'<span class="dot"></span>{label}{badge}</button>'
-        )
+        badge = f'<span class="badge{"" if waiting else " zero"}">{waiting}</span>'
 
         waiting_secs = 0 if busy else interval_left(store, config, source)
         if waiting_secs:
             note = f"离下次可扫还有 {waiting_secs // 60 + 1} 分钟"
         disabled = " disabled" if (busy or cooling or waiting_secs) else ""
+        # 【busy 时这一行留给进度细节】：按钮上已经写着"扫描中…"，再写一遍是废话；
+        # 真正有用的是"现在扫到哪儿了"，那由 #step 填。
+        hold = ""
+        if busy:
+            hold = f'<div class="src-when hold" id="step">{html.escape(status.get("step") or "")}</div>'
+        elif cooling or waiting_secs:
+            hold = f'<div class="src-when hold">{note}</div>' 
+
+        # 【三个源的状态常驻在左边】：以前是 tab，不切过去就不知道那个源是什么
+        # 情况——而"哪个源有东西、上次什么时候扫的"恰恰是每次打开页面最先要看的。
+        side.append(
+            f'<div class="src-item {css}" data-source="{source}">'
+            f'<div class="src-name"><span class="dot"></span>{label}{badge}</div>'
+            f'<div class="src-when">{last_scan_text(last)}</div>'
+            f'{hold}'
+            f'<button class="src-btn {css}" data-source="{source}"{disabled}>'
+            f'{"扫描中…" if busy else "扫一遍"}</button>'
+            f'</div>'
+        )
+
         more = f"，还有 {waiting - len(rows)} 条排队" if waiting > len(rows) else ""
         panels.append(
             f'<section class="panel" data-source="{source}">'
-            f'<div class="panel-head">'
-            f'<button class="src-btn {css}" data-source="{source}"{disabled}>'
-            f'{"扫描中…" if busy else "扫一遍"}</button>'
-            f'<span class="status">{last_scan_text(last)} · 这一轮 {len(rows)} 条{more}'
-            f'{" · " + note if (busy or cooling or waiting_secs) else ""}</span>'
-            f'</div>'
+            f'<h2>{label}<span class="count">这一轮 {len(rows)} 条{more}</span></h2>'
             + (cards_for(rows) or '<p class="empty">这一轮没有值得看的。</p>')
             + '</section>'
         )
 
     # 【错误要说清是谁、什么时候】：光一句"出错了：刚扫过"，隔一会儿再看根本
     # 分不清是刚才那次还是半小时前那次。
+    # 【进度只出现在正在扫的那个源里】：它是"这个源现在扫到哪儿了"，挂在侧栏
+    # 最底下会变成一句没有主语的话。没有源在扫时也要留着这个元素，JS 断线时
+    # 要往里写字。
+    idle_step = "" if status.get("busy") else '<p class="status idle-step" id="step"></p>'
+
     err = ""
     if status.get("error"):
         who = SOURCE_LABELS.get(status.get("error_source"), ("", ""))[0]
@@ -726,10 +763,11 @@ def render_page(store, config, status):
 <style>{STYLE}</style></head>
 <body>
 <h1>值得看的帖子</h1>
-<p class="meta">{stamp} · 点标题在新标签页打开原帖 · 每个源各扫各的，切 tab 不会触发扫描</p>
-<div class="tabs">{''.join(tabs)}<span class="status" id="step">{html.escape(status.get("step") or "")}</span></div>
-{err}
-{''.join(panels)}
+<p class="meta">{stamp} · 点标题在新标签页打开原帖 · 左边点一下切换源，各扫各的</p>
+<div class="wrap">
+  <aside class="side">{''.join(side)}{idle_step}</aside>
+  <main class="main">{err}{''.join(panels)}</main>
+</div>
 <p class="note">
   这些是<strong>链接，不是草稿</strong>。回复请用你自己的账号发，提到 LeeAB 时说明身份。<br>
   点【已处理】或【忽略】之后那一条就不再出现；没点的下次打开还在。
@@ -740,17 +778,24 @@ const step = document.getElementById("step");
 
 // 【记住停在哪个 tab】：扫完一轮要整页重画（榜单、按钮颜色、时间全都变了），
 // 如果每次都跳回第一个 tab，人刚点的那个源反而看不见了。
-const tabs = [...document.querySelectorAll(".tab")];
+const tabs = [...document.querySelectorAll(".src-item")];
 const panels = [...document.querySelectorAll(".panel")];
 function showTab(source) {{
   tabs.forEach(t => t.classList.toggle("on", t.dataset.source === source));
   panels.forEach(p => p.classList.toggle("on", p.dataset.source === source));
   try {{ localStorage.setItem("radar-tab", source); }} catch (e) {{}}
 }}
-tabs.forEach(t => t.addEventListener("click", () => showTab(t.dataset.source)));
+// 【点整块都能切，但点"扫一遍"不算】：按钮在块里面，不拦住的话点扫描会连带
+// 切换一次，视线正跟着的那一列忽然换了内容。
+tabs.forEach(t => t.addEventListener("click", ev => {{
+  if (ev.target.closest(".src-btn")) return;
+  showTab(t.dataset.source);
+}}));
 // 正在扫的那个源优先——扫完页面自己重画，人想看的就是它的结果。
-const busyTab = document.querySelector(".tab.busy");
+const busyTab = document.querySelector(".src-item.busy");
 let want = busyTab && busyTab.dataset.source;
+// 地址栏里的 #reddit 之类优先：这样一个源可以直接收藏成书签。
+if (!want && location.hash.length > 1) {{ want = location.hash.slice(1); }}
 if (!want) {{ try {{ want = localStorage.getItem("radar-tab"); }} catch (e) {{}} }}
 showTab(tabs.some(t => t.dataset.source === want) ? want : tabs[0].dataset.source);
 
@@ -874,7 +919,13 @@ def main():
     config = load_config()
     if args.forum_only:
         config = {**config, "reddit_rss": {**config.get("reddit_rss", {}), "enabled": False}}
-    store = Store(HERE / config.get("database", "radar.sqlite3"))
+    # 【样例数据走另一个库】：--sample 是用来验证代码跑得通的，不是用来看的。
+    # 它原来和真数据写在同一个库里，跑一次冒烟测试，页面上就多出两条永远等着
+    # 你处理的假帖子，看着和真的一模一样（2026-09-20 就这么混进去过两条）。
+    database = config.get("database", "radar.sqlite3")
+    if args.sample:
+        database = "radar-sample.sqlite3"
+    store = Store(HERE / database)
     limit = args.limit or config.get("daily_limit", 5)
 
     try:
