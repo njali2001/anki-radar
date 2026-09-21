@@ -490,9 +490,33 @@ h1 .total { color: #8b93a1; font-weight: 400; }
    【右边仍然一次只显示一个源】：三个源的语气和该给的答案深度不一样，混在一起
    读要来回切换脑子；而且量小的那个会被量大的埋掉。 */
 .wrap { display: flex; gap: 26px; align-items: flex-start; }
-.side { flex: 0 0 240px; width: 240px; position: sticky; top: 28px;
+.side { flex: 0 0 240px; width: 240px;
         display: flex; flex-direction: column; gap: 10px; }
 .main { flex: 1; min-width: 0; max-width: 860px; }
+
+/* 【外框固定，左右两栏各滚各的】（2026-09-20 运营者定）：原来整页一起滚，
+   往下读评论时左边的源列表跟着滚没了，想切到别的源还得滚回顶上。现在标题和
+   两栏的外框钉在窗口里，滚轮在哪一栏上就只滚哪一栏。
+
+   只挂在 body.app 上：离线生成的 report.html 也用这份样式，它没有两栏，
+   要是把 overflow 锁死，那一页就再也滚不动了。 */
+html:has(body.app) { height: 100%; }
+body.app { height: 100vh; padding: 0; overflow: hidden;
+           display: flex; flex-direction: column; }
+body.app h1 { flex: none; margin: 0; padding: 26px 28px 20px; }
+body.app .wrap { flex: 1; min-height: 0; align-items: stretch; padding: 0 0 0 28px; }
+body.app .side, body.app .main { overflow-y: auto; overscroll-behavior: contain;
+                                 padding-bottom: 32px; }
+body.app .side { padding-right: 4px; }
+/* 固定高度的 flex 列里，子元素默认会被压扁去塞进高度，而不是溢出去滚动。 */
+body.app .side > * { flex: none; }
+body.app .main { max-width: none; padding-right: 28px; }
+body.app .main > * { max-width: 860px; }
+/* 暗色底上系统默认那根白滚动条太扎眼。 */
+body.app .side, body.app .main { scrollbar-width: thin; scrollbar-color: #2f3540 transparent; }
+body.app .side::-webkit-scrollbar, body.app .main::-webkit-scrollbar { width: 8px; }
+body.app .side::-webkit-scrollbar-thumb, body.app .main::-webkit-scrollbar-thumb {
+  background: #2f3540; border-radius: 4px; }
 .src-item { border: 1px solid #262a31; border-radius: 12px; padding: 12px 14px;
             background: #1a1d22; cursor: pointer; }
 .src-item:hover { border-color: #3a424e; }
@@ -522,6 +546,10 @@ h1 .total { color: #8b93a1; font-weight: 400; }
 .src-btn.busy { color: #e8d9a8; border-color: #4a4326; animation: pulse 1s infinite; }
 /* 窄窗口：侧栏放平成一排，别把正文挤成一条缝。 */
 @media (max-width: 880px) {
+  body.app .wrap { padding: 0 16px; gap: 14px; }
+  body.app .side { flex: none; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+                   padding-bottom: 6px; }
+  body.app .main { padding-right: 0; }
   .wrap { flex-direction: column; }
   .side { position: static; width: auto; flex: none; flex-direction: row; flex-wrap: wrap; }
   .src-item { flex: 1 1 200px; }
@@ -569,17 +597,24 @@ def highlight(text, keywords):
     【先转义再高亮，顺序不能反】：反过来的话我们自己插入的 <mark> 会被转义成
     可见的字符串。关键词本身是字母数字和空格，转义不会改变它们的写法，
     所以在转义后的文本上按原词匹配是安全的。
+
+    【和 pattern_for 同一套规则】：匹配那边会给中文退回子串、给 sincroniz* 按
+    词干算，这边原来一律整词——结果 B站 的"服务器"、YouTube 的"sincronizar"
+    明明命中了，卡片上却一个字都没亮（2026-09-20 看截图才发现）。
     """
     escaped = html.escape(text)
     for keyword in sorted(keywords, key=len, reverse=True):
-        if not keyword.strip():
+        word = keyword.strip()
+        if not word:
             continue
-        escaped = re.sub(
-            rf"(?<!\w)({re.escape(html.escape(keyword.strip()))})(?!\w)",
-            r"<mark>\1</mark>",
-            escaped,
-            flags=re.IGNORECASE,
-        )
+        if word.endswith("*"):
+            # 词干：把整个词亮出来，而不是只亮前半截 "sincroniz"。
+            pattern = rf"({re.escape(html.escape(word[:-1]))}\w*)"
+        elif any(ord(ch) > 127 for ch in word):
+            pattern = rf"({re.escape(html.escape(word))})"
+        else:
+            pattern = rf"(?<!\w)({re.escape(html.escape(word))})(?!\w)"
+        escaped = re.sub(pattern, r"<mark>\1</mark>", escaped, flags=re.IGNORECASE)
     return escaped
 
 
@@ -840,17 +875,18 @@ def render_page(store, config, status):
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar</title>
 <style>{STYLE}</style></head>
-<body>
+<body class="app">
 <h1>值得看的帖子<span class="total">（{total}）</span></h1>
 <div class="wrap">
   <aside class="side">{''.join(side)}{idle_step}</aside>
-  <main class="main">{err}{''.join(panels)}</main>
-</div>
+  <main class="main">{err}{''.join(panels)}
 <p class="note">
   这些是<strong>链接，不是草稿</strong>。回复请用你自己的账号发，提到 LeeAB 时说明身份。<br>
   点【已处理】或【忽略】之后那一条就不再出现；没点的下次打开还在。
   AI 判定不相关的会被直接刷掉，不占位置。
 </p>
+  </main>
+</div>
 <script>
 const step = document.getElementById("step");
 
@@ -858,9 +894,14 @@ const step = document.getElementById("step");
 // 如果每次都跳回第一个 tab，人刚点的那个源反而看不见了。
 const tabs = [...document.querySelectorAll(".src-item")];
 const panels = [...document.querySelectorAll(".panel")];
+const mainPane = document.querySelector(".main");
 function showTab(source) {{
+  const changed = !tabs.some(t => t.classList.contains("on") && t.dataset.source === source);
   tabs.forEach(t => t.classList.toggle("on", t.dataset.source === source));
   panels.forEach(p => p.classList.toggle("on", p.dataset.source === source));
+  // 【换了源就回到右栏顶上】：右栏现在自己滚，切过去时要是还停在上一个源
+  // 滚到的位置，新列表的开头就看不见了。点的是同一个源就别动。
+  if (changed && mainPane) {{ mainPane.scrollTop = 0; }}
   try {{ localStorage.setItem("radar-tab", source); }} catch (e) {{}}
 }}
 // 【点整块都能切，但点"扫一遍"不算】：按钮在块里面，不拦住的话点扫描会连带
