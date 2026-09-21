@@ -52,6 +52,12 @@ def pattern_for(keyword):
     含非 ASCII 字符时退回子串匹配。
     """
     word = keyword.strip()
+    # 【词尾写星号 = 按词干匹配】：葡语一个动词有 sincronizar / sincroniza /
+    # sincronizando / sincronização 一大串变位，整词匹配一个都逮不着（2026-09-20
+    # 实测：YouTube 一轮 61 条评论只有 1 条过了筛子，不是评论不相关，是词形对不上）。
+    # 写成 sincroniz* 就都算命中。
+    if word.endswith("*"):
+        return re.compile(re.escape(word[:-1]), re.IGNORECASE)
     if any(ord(ch) > 127 for ch in word):
         return re.compile(re.escape(word), re.IGNORECASE)
     return re.compile(rf"(?<!\w){re.escape(word)}(?!\w)", re.IGNORECASE)
@@ -145,6 +151,47 @@ def collect(config, use_sample, only=None, progress=None):
                 items.extend(sources.bilibili_comments(video["_aid"], video["_bvid"]))
             except sources.RateLimited as exc:
                 say("B站 判定为异常请求，这一轮到此为止")
+                exc.collected = items
+                raise
+            except sources.SourceError as exc:
+                print(f"  跳过评论：{exc}")
+
+    tube = config.get("youtube", {})
+    if tube.get("enabled") and tube.get("api_key") and only in (None, "youtube"):
+        patterns = [(k, pattern_for(k)) for k in tube.get("keywords", []) if k.strip()]
+        pause = tube.get("pause_seconds", 2)
+        key = tube["api_key"]
+        found = []
+        for entry in tube.get("search", []):
+            if not first:
+                sources.pause(pause)
+            first = False
+            say(f"YouTube 搜索：{entry['query']}")
+            try:
+                found.extend(sources.youtube_videos(entry["query"], key, lang=entry.get("lang")))
+            except sources.RateLimited as exc:
+                say("YouTube 配额用完了，这一轮到此为止")
+                exc.collected = items
+                raise
+            except sources.SourceError as exc:
+                print(f"  跳过 YouTube「{entry['query']}」：{exc}")
+
+        # 【视频本身不入库，只用来找评论】：和 B站 一样，搜到的是教程，发布时间
+        # 动辄两三年前；人在评论区，而评论是新的。
+        picked, taken = [], set()
+        for video in found:
+            if video["_video_id"] in taken:
+                continue
+            if matches(f"{video['title']}\n{video['body']}", patterns) or not patterns:
+                taken.add(video["_video_id"])
+                picked.append(video)
+        for video in picked[: int(tube.get("max_videos_for_comments", 8))]:
+            sources.pause(pause)
+            say(f"YouTube 评论：{video['title'][:26]}")
+            try:
+                items.extend(sources.youtube_comments(video["_video_id"], key))
+            except sources.RateLimited as exc:
+                say("YouTube 配额用完了，这一轮到此为止")
                 exc.collected = items
                 raise
             except sources.SourceError as exc:
@@ -432,6 +479,7 @@ h1 .total { color: #8b93a1; font-weight: 400; }
 .src-forum { background: #1f3346; color: #9cc9f0; }
 .src-reddit { background: #46281f; color: #f0b79c; }
 .src-bili { background: #3d2233; color: #f0a8d0; }
+.src-yt { background: #46201f; color: #f09a9a; }
 .ai { background: #2a2440; color: #c3b6f0; }
 
 /* 【三个源常驻在左边，右边只放选中那个源的榜单】（2026-09-20 运营者定）：
@@ -540,12 +588,24 @@ SOURCE_CONFIG_KEY = {
     "ankiforum": "anki_forum",
     "reddit": "reddit_rss",
     "bilibili": "bilibili",
+    "youtube": "youtube",
 }
+
+# 【哪些源要在页面上出现】：没配也没开的源不占位置。论坛和 Reddit 没有开关，
+# 它们不需要任何凭据，装上就能用。
+ALWAYS_ON = ("ankiforum", "reddit")
+
+
+def enabled_sources(config):
+    return [name for name in SOURCE_CONFIG_KEY
+            if name in ALWAYS_ON
+            or config.get(SOURCE_CONFIG_KEY[name], {}).get("enabled")]
 
 SOURCE_LABELS = {
     "reddit": ("Reddit", "src-reddit"),
     "ankiforum": ("Anki 论坛", "src-forum"),
     "bilibili": ("B站", "src-bili"),
+    "youtube": ("YouTube", "src-yt"),
 }
 
 
@@ -709,9 +769,7 @@ def render_page(store, config, status):
     """网页版的整页：左边一列源，右边选中那个源的榜单。"""
     limit = config.get("daily_limit", 5)
     side, panels, total = [], [], 0
-    for source in ("ankiforum", "reddit", "bilibili"):
-        if source == "bilibili" and not config.get("bilibili", {}).get("enabled"):
-            continue
+    for source in enabled_sources(config):
         label = SOURCE_LABELS[source][0]
         last = store.get_meta(f"last_scan_{source}")
         busy = status.get("busy") == source

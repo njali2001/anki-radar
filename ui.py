@@ -21,8 +21,8 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-SOURCES = ("ankiforum", "reddit", "bilibili")
-LABELS = {"ankiforum": "Anki 论坛", "reddit": "Reddit", "bilibili": "B站"}
+SOURCES = ("ankiforum", "reddit", "bilibili", "youtube")
+LABELS = {"ankiforum": "Anki 论坛", "reddit": "Reddit", "bilibili": "B站", "youtube": "YouTube"}
 
 
 class State:

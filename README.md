@@ -25,6 +25,12 @@ US, against the FTC endorsement guidelines.
      to subscribe to. What a search returns is not filtered against the keyword
      list afterwards — the query is the filter, and re-filtering would drop
      exactly the posts worth reading, such as a bare "Help, cannot boot up Anki".
+   - YouTube comments (official Data API v3, needs a free key), for the
+     Portuguese- and English-speaking study crowds: the same pattern as
+     Bilibili. A Brazilian who cannot get a sync to finish does not open a
+     forum thread; they say so under "Como sincronizar o Anki com o celular",
+     which has tens of thousands of views. One pass returned seven real
+     complaints where a month of Portuguese Reddit searching returned none.
    - Bilibili (`bilibili.com`), for the Chinese-speaking side: it searches for
      videos, then reads the **comments** under the few whose title or
      description look relevant. The videos themselves are almost always
@@ -114,13 +120,21 @@ any credentials.
                     vague ones. ASCII only (HTTP headers cannot hold anything else).
     keywords        whole-word, case-insensitive. Pick phrases only Anki users
                     would write; there is no AND across separate words. They
-                    filter the feeds, not the searches.
+                    filter the feeds, not the searches. A trailing `*` matches a
+                    stem: Portuguese conjugates one verb into sincronizar,
+                    sincroniza, sincronizando and sincronização, and whole-word
+                    matching catches none of them.
     searches        Reddit queries, each with a short label that becomes the
                     reason the item was kept. Boolean syntax works:
                     anki (sync OR ankiweb OR syncing).
     max_age_days    older threads have usually been answered already.
     pause_seconds   delay between HTTP requests. Raise it if you see HTTP 429.
     daily_limit     how many items land in one report.
+    youtube         off until you add an API key. In the Google Cloud console,
+                    enable YouTube Data API v3 and create an API key — the
+                    Gemini key from AI Studio is a different kind and returns
+                    401 here. A search costs 100 quota units and reading one
+                    video's comments costs 1, against 10,000 free per day.
     ai              optional. With an API key and enabled=true, keyword hits are
                     scored 0-3 for "is this person actually stuck on syncing or
                     size"; only 2+ is shown, with a one-line reason. Without a

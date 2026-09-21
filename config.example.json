@@ -105,5 +105,49 @@
     "min_score": 1,
     "_min_interval_minutes": "B站 上 Anki 是冷门话题，评论隔几天才来一条，半天扫一次已经足够密。",
     "min_interval_minutes": 360
+  },
+  "youtube": {
+    "_说明": "YouTube 评论区：巴西和印度的 Anki 用户主要在这儿。和 B站 一样——搜教程视频，读它下面的评论，真正卡住的人在评论里。",
+    "enabled": true,
+    "_api_key": "Google Cloud 控制台里启用 YouTube Data API v3 之后创建的 API key。注意：AI Studio 那个 Gemini key 用不了，会返回 401。",
+    "api_key": "",
+    "_search": "搜哪些视频。每次搜索花 100 单位配额，读一个视频的评论花 1 单位，免费额度是每天 10000 单位。",
+    "search": [
+      {
+        "label": "巴西",
+        "query": "anki sincronizar celular",
+        "lang": "pt"
+      },
+      {
+        "label": "巴西",
+        "query": "anki sincronização erro",
+        "lang": "pt"
+      },
+      {
+        "label": "印度",
+        "query": "anki sync not working",
+        "lang": "en"
+      }
+    ],
+    "_keywords": "从搜到的视频里挑哪些去读评论，也用来筛评论。词尾写 * 表示按词干匹配——葡语一个动词有一大串变位，整词匹配一个都逮不着。",
+    "keywords": [
+      "sincroniz*",
+      "sincroniza",
+      "não sincroniza",
+      "erro*",
+      "falha*",
+      "problema*",
+      "nuvem",
+      "sync*",
+      "syncing",
+      "ankiweb",
+      "too large",
+      "not working",
+      "stuck"
+    ],
+    "max_videos_for_comments": 8,
+    "max_age_days": 180,
+    "min_interval_minutes": 360,
+    "pause_seconds": 2
   }
 }

@@ -395,3 +395,107 @@ def bilibili_comments(aid, bvid, limit=20):
             }
         )
     return items
+
+
+# --- YouTube -----------------------------------------------------------------
+#
+# 【巴西和印度的人在这儿，不在论坛】（2026-09-20 实测）：葡语的 Reddit 一个月
+# 只有 4 条 anki 相关，而 YouTube 上"Como sincronizar o Anki com o celular"这类
+# 教程动辄几万到二十几万播放；印度那边"How To Use Anki Like A Pro"有 229 万。
+# 和 B站 一样——卡住的人不会专门发帖，但会在教程底下留一句"我这边对不上"。
+#
+# 【要的是官方 API，不是 AI Studio 那个 key】：Gemini 用的 Generative Language
+# key 调这里会返回 401 "API keys are not supported by this API"。得在 Google
+# Cloud 控制台启用 YouTube Data API v3 再单独建一个。
+
+YOUTUBE_API = "https://www.googleapis.com/youtube/v3"
+
+
+def _youtube(path, params, key):
+    url = f"{YOUTUBE_API}/{path}?" + urllib.parse.urlencode({**params, "key": key})
+    try:
+        with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")
+        reason, message = "", body[:200]
+        try:
+            error = json.loads(body)["error"]
+            message = error.get("message", "")[:200]
+            reason = (error.get("errors") or [{}])[0].get("reason", "")
+        except (ValueError, KeyError, IndexError):
+            pass
+        if reason in ("quotaExceeded", "rateLimitExceeded", "userRateLimitExceeded"):
+            # 【配额用完了就停到明天】：每天太平洋时间零点重置，中间再怎么试都是
+            # 同一个 403，不如让按钮灰着。
+            raise RateLimited(f"YouTube 配额用完了（{reason}）", retry_after=6 * 3600)
+        if exc.code == 403 and "disabled" in message.lower():
+            raise SourceError(f"YouTube：{message}（是不是没启用 YouTube Data API v3？）")
+        raise SourceError(f"YouTube HTTP {exc.code}：{message}")
+    except urllib.error.URLError as exc:
+        raise SourceError(f"{exc.reason}：{path}")
+
+
+def youtube_videos(query, key, lang=None, limit=10):
+    """搜视频。【一次搜索花 100 单位配额】，而免费额度一天 10000，所以搜索词
+    要少而准，真正便宜的是下面那个读评论（一次 1 单位）。"""
+    params = {"part": "snippet", "q": query, "type": "video",
+              "maxResults": limit, "order": "relevance"}
+    if lang:
+        params["relevanceLanguage"] = lang
+    data = _youtube("search", params, key)
+    items = []
+    for entry in data.get("items", []):
+        ident = (entry.get("id") or {}).get("videoId")
+        snippet = entry.get("snippet") or {}
+        if not ident:
+            continue
+        items.append(
+            {
+                "external_id": f"yt:{ident}",
+                "source": "youtube",
+                "kind": "post",
+                "community": snippet.get("channelTitle") or "youtube",
+                "title": _strip_html(snippet.get("title")),
+                "body": _strip_html(snippet.get("description")),
+                "author": snippet.get("channelTitle") or "",
+                "permalink": f"https://www.youtube.com/watch?v={ident}",
+                "created_utc": _stamp(snippet.get("publishedAt")),
+                "_video_id": ident,
+            }
+        )
+    return items
+
+
+def youtube_comments(video_id, key, limit=20):
+    """一个视频下最新的评论。
+
+    【按时间排】：热门排出来的是三年前点赞最多的那条；要找的是最近谁卡住了。
+    评论区关掉的视频会返回 403 commentsDisabled，那不是错，跳过就行。
+    """
+    try:
+        data = _youtube("commentThreads",
+                        {"part": "snippet", "videoId": video_id, "maxResults": limit,
+                         "order": "time", "textFormat": "plainText"}, key)
+    except SourceError as exc:
+        if "comment" in str(exc).lower() and "disabled" in str(exc).lower():
+            return []
+        raise
+    items = []
+    for thread in data.get("items", []):
+        top = ((thread.get("snippet") or {}).get("topLevelComment") or {}).get("snippet") or {}
+        items.append(
+            {
+                "external_id": f"yt:{thread.get('id')}",
+                "source": "youtube",
+                "kind": "comment",
+                "community": top.get("authorDisplayName") or "youtube",
+                "title": "",
+                "body": _strip_html(top.get("textDisplay")),
+                "author": top.get("authorDisplayName") or "",
+                "permalink": f"https://www.youtube.com/watch?v={video_id}"
+                             f"&lc={thread.get('id')}",
+                "created_utc": _stamp(top.get("publishedAt")),
+            }
+        )
+    return items
