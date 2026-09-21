@@ -395,7 +395,10 @@ STYLE = """
 :root { color-scheme: dark; }
 body { margin: 0; padding: 32px 28px 60px; background: #14161a; color: #e8eaed;
        font: 16px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
-h1 { font-size: 22px; margin: 0 0 4px; }
+/* 【标题后面那个数是"还等着你看的总数"】：三个源加起来，也就是今天还剩多少
+   活儿，所以放在最显眼的地方；各源分别多少看左边。 */
+h1 { font-size: 22px; margin: 0 0 24px; }
+h1 .total { color: #8b93a1; font-weight: 400; }
 .meta { color: #8b93a1; font-size: 14px; margin-bottom: 28px; }
 .card { border: 1px solid #262a31; border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
         background: #1a1d22; }
@@ -687,7 +690,7 @@ def check_ai(config):
 def render_page(store, config, status):
     """网页版的整页：左边一列源，右边选中那个源的榜单。"""
     limit = config.get("daily_limit", 5)
-    side, panels = [], []
+    side, panels, total = [], [], 0
     for source in ("ankiforum", "reddit", "bilibili"):
         if source == "bilibili" and not config.get("bilibili", {}).get("enabled"):
             continue
@@ -710,6 +713,7 @@ def render_page(store, config, status):
         waiting = store.pending_count(source)
         # 【0 也要显示】（2026-09-20 运营者定）：没有徽章和"这个源确实是 0 条"
         # 长得一样，但意思差很多——后者是看过了之后的结论。
+        total += waiting
         badge = f'<span class="badge{"" if waiting else " zero"}">{waiting}</span>'
 
         waiting_secs = 0 if busy else interval_left(store, config, source)
@@ -757,13 +761,11 @@ def render_page(store, config, status):
         when = time.strftime("%H:%M", time.localtime(status.get("error_at") or time.time()))
         err = (f'<p class="err">{html.escape(who)} · {when} 出错了：'
                f'{html.escape(status["error"])}</p>')
-    stamp = time.strftime("%Y-%m-%d %H:%M")
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar</title>
 <style>{STYLE}</style></head>
 <body>
-<h1>值得看的帖子</h1>
-<p class="meta">{stamp} · 点标题在新标签页打开原帖 · 左边点一下切换源，各扫各的</p>
+<h1>值得看的帖子<span class="total">（{total}）</span></h1>
 <div class="wrap">
   <aside class="side">{''.join(side)}{idle_step}</aside>
   <main class="main">{err}{''.join(panels)}</main>
