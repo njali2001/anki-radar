@@ -22,7 +22,18 @@
     "_include_comments": "扫评论会让请求数翻倍，而限流按请求数算。默认只扫帖子。",
     "include_comments": false,
     "_min_interval_minutes": "两次扫描之间至少隔这么久，在那之前按钮是灰的。Reddit 一轮要四五分钟，一小时内再扫一遍，取回来的基本是同一批。",
-    "min_interval_minutes": 60
+    "min_interval_minutes": 60,
+    "_searches": "Reddit 全站搜索：一个请求覆盖所有版块，卡住的人不一定在 r/Anki 发问。查询语句本身就是筛子，搜出来的不再过关键词表，相关性交给 AI。",
+    "searches": [
+      {
+        "label": "同步",
+        "query": "anki (sync OR ankiweb OR syncing)"
+      },
+      {
+        "label": "容量",
+        "query": "anki (\"too large\" OR \"size limit\" OR \"collection is too large\")"
+      }
+    ]
   },
   "pause_seconds": 20,
   "keywords": [

@@ -18,7 +18,13 @@ US, against the FTC endorsement guidelines.
 
 1. Reads public sources for a small set of keywords:
    - the official Anki forum (`forums.ankiweb.net`, Discourse search JSON)
-   - public subreddit feeds (`reddit.com/r/<sub>/new.rss`)
+   - Reddit, both as a site-wide search (`reddit.com/search.rss`) and as the
+     new-post feeds of a few named subreddits. The search matters more than the
+     list: someone stuck on a sync is not necessarily posting in r/Anki, and a
+     week's hits routinely span half a dozen subreddits nobody would have thought
+     to subscribe to. What a search returns is not filtered against the keyword
+     list afterwards — the query is the filter, and re-filtering would drop
+     exactly the posts worth reading, such as a bare "Help, cannot boot up Anki".
    - Bilibili (`bilibili.com`), for the Chinese-speaking side: it searches for
      videos, then reads the **comments** under the few whose title or
      description look relevant. The videos themselves are almost always
@@ -107,7 +113,11 @@ any credentials.
     user_agent      identify yourself; Reddit asks for this and rate-limits
                     vague ones. ASCII only (HTTP headers cannot hold anything else).
     keywords        whole-word, case-insensitive. Pick phrases only Anki users
-                    would write; there is no AND across separate words.
+                    would write; there is no AND across separate words. They
+                    filter the feeds, not the searches.
+    searches        Reddit queries, each with a short label that becomes the
+                    reason the item was kept. Boolean syntax works:
+                    anki (sync OR ankiweb OR syncing).
     max_age_days    older threads have usually been answered already.
     pause_seconds   delay between HTTP requests. Raise it if you see HTTP 429.
     daily_limit     how many items land in one report.

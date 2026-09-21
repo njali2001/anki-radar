@@ -154,6 +154,22 @@ def collect(config, use_sample, only=None, progress=None):
     if reddit_cfg.get("enabled", True) and only in (None, "reddit"):
         # 【Reddit 只走公开 RSS，而且要很克制】：.json 已经 403，.rss 还能用，
         # 但连发几次就 429。每个请求之间歇 pause_seconds 秒。
+        for entry in reddit_cfg.get("searches", []):
+            if not first:
+                sources.pause(pause_seconds)
+            first = False
+            say(f"Reddit 全站搜索：{entry['label']}（每次请求之间等 {pause_seconds} 秒）")
+            try:
+                items.extend(sources.reddit_search(
+                    entry["query"], entry["label"], user_agent,
+                    window=entry.get("window", "week")))
+            except sources.RateLimited as exc:
+                say(f"被限流，这一轮 Reddit 到此为止（已取到 {len(items)} 条）")
+                exc.collected = items
+                raise
+            except sources.SourceError as exc:
+                print(f"  跳过搜索「{entry['label']}」：{exc}")
+
         for subreddit in reddit_cfg.get("subreddits", []):
             # 【评论默认不扫】：帖子和评论各要一次请求，扫评论等于把请求数翻倍，
             # 而限流正是按请求数算的。真需要的话在 config 里打开 include_comments。
@@ -220,7 +236,9 @@ def scan(store, config, use_sample, only=None, progress=None):
         if any(n in haystack.lower() for n in noise):
             stale += 1
             continue
-        hit = matches(haystack, patterns)
+        # 【搜索来的自带命中理由】：查询语句本身就是筛子，再过一遍关键词表会
+        # 把"Help - Cannot boot up Anki"这种扔掉，而那正是要看的人。
+        hit = item.get("matched_hint") or matches(haystack, patterns)
         if not hit:
             continue
         if store.add(item, hit, now):

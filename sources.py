@@ -187,6 +187,51 @@ def reddit_rss(subreddit, user_agent, kind="post"):
     return items
 
 
+def reddit_search(query, label, user_agent, window="week"):
+    """全站搜索，而不是只盯着几个订阅的版块。
+
+    【为什么要加这个】：卡在同步上的人不一定在 r/Anki 发问——他可能在 r/MCAT2、
+    r/BeginnerKorean、或者任何一个我们没列进订阅表的地方（2026-09-20 实测，一周
+    内的命中就跨了七八个版块）。订阅表再长也总有漏的，而搜索一个请求覆盖全站。
+
+    【搜出来的不再过关键词】：查询语句本身就是筛子，命中的理由就是这条查询。
+    再拿关键词表卡一遍的话，"Help - Cannot boot up Anki"这种会被直接扔掉——
+    可那正是要看的人。剩下的相关性判断交给 AI。
+    """
+    url = ("https://www.reddit.com/search.rss?q=" + urllib.parse.quote(query)
+           + f"&sort=new&t={window}")
+    root = ET.fromstring(_get(url, user_agent, "application/atom+xml"))
+    items = []
+    for entry in root.findall(f"{ATOM}entry"):
+        ident = (entry.findtext(f"{ATOM}id") or "").strip()
+        # 【搜索结果里混着"版块"本身】：搜 anki 会连 r/Anki、r/AnkiMCAT 这些版块
+        # 一起返回，它们没有正文、也没人在那儿求助，是纯噪音（2026-09-20 实测，
+        # 25 条新收里有 4 条是这种）。帖子的 id 是 t3_ 开头，只留这些。
+        if "t3_" not in ident:
+            continue
+        link = entry.find(f"{ATOM}link")
+        author = entry.find(f"{ATOM}author")
+        category = entry.find(f"{ATOM}category")
+        # 标签给的是 "r/Anki"，而 community 字段存的是光秃秃的版块名，
+        # 页面上再自己加 r/ 前缀——不剥掉就会显示成 r/r/Anki。
+        community = (category.get("label") if category is not None else "") or "reddit"
+        items.append(
+            {
+                "external_id": f"reddit:{ident}",
+                "source": "reddit",
+                "kind": "post",
+                "community": community[2:] if community.startswith("r/") else community,
+                "title": (entry.findtext(f"{ATOM}title") or "").strip(),
+                "body": _strip_html(entry.findtext(f"{ATOM}content") or ""),
+                "author": (author.findtext(f"{ATOM}name") if author is not None else "") or "",
+                "permalink": (link.get("href") if link is not None else "") or "",
+                "created_utc": _stamp(entry.findtext(f"{ATOM}published")),
+                "matched_hint": [label],
+            }
+        )
+    return items
+
+
 def pause(seconds):
     """两次请求之间歇一会儿。被 429 之后再重试，代价比多等几秒高得多。"""
     time.sleep(max(0, seconds))
