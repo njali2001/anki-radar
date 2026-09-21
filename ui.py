@@ -17,6 +17,7 @@ import threading
 import time
 import traceback
 import urllib.parse
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -80,11 +81,6 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
     不会变黄，人看到的是"灰着不动"，会以为没在扫。
     """
     state = State()
-
-    if warm_source and state.start(warm_source):
-        threading.Thread(
-            target=_run, args=(store, config, scan_source, state, warm_source), daemon=True
-        ).start()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -155,8 +151,35 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
             else:
                 self._send("not found", "text/plain; charset=utf-8", 404)
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    class Server(ThreadingHTTPServer):
+        # 【Windows 上一定要关掉 SO_REUSEADDR】：Python 默认开着它，而 Windows 的
+        # 语义和 Unix 不一样——它允许第二个进程绑到同一个端口上，两个都"启动成功"，
+        # 之后请求随机落到其中一个。表现出来就是改了代码刷新页面却时灵时不灵，
+        # 而两个窗口都好端端地开着（2026-09-20 实测端口上真的蹲了两个进程）。
+        allow_reuse_address = False
+
     url = f"http://127.0.0.1:{port}/"
+    try:
+        server = Server(("127.0.0.1", port), Handler)
+    except OSError:
+        # 【说清楚是"已经开着"，不是"崩了"】：双击 run.bat 的人看到的是一个一闪
+        # 而过的黑窗口，里面要么是一串 traceback，要么是一句人话。
+        print(f"{port} 端口上已经有东西在跑了。")
+        if _is_radar(url):
+            print(f"就是 anki-radar 本身——页面还开着，直接刷新 {url} 就行。")
+            print("要重开的话，先把那个窗口关掉（Ctrl-C），再跑一次。")
+        else:
+            print("但不是 anki-radar。换个端口：run.bat --port 8900")
+        # 【要以非 0 退出】：run.bat 只在出错时 pause，正常结束的话双击出来的
+        # 那个黑窗口会立刻关掉，上面这几行人根本来不及看。
+        raise SystemExit(1)
+    # 【先占住端口，再开扫】：顺序反过来的话，第二次启动会先老老实实扫一遍论坛，
+    # 白发一轮网络请求，最后才发现端口早被占了。
+    if warm_source and state.start(warm_source):
+        threading.Thread(
+            target=_run, args=(store, config, scan_source, state, warm_source), daemon=True
+        ).start()
+
     print(f"本地页面：{url}（Ctrl-C 关闭）")
     if open_browser:
         webbrowser.open(url)
@@ -164,6 +187,15 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n已关闭。")
+
+
+def _is_radar(url):
+    """端口被占了：占它的是不是我们自己？问一下 /status 就知道。"""
+    try:
+        with urllib.request.urlopen(url + "status", timeout=3) as response:
+            return "busy" in json.loads(response.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 —— 探一下而已，失败就当不是
+        return False
 
 
 def _run(store, config, scan_source, state, source):

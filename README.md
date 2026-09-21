@@ -90,6 +90,11 @@ One-off runs without the page:
     python radar.py --again                  reopen the last report
     python radar.py --stats                  which keyword produced how many hits
 
+Starting it a second time while it is already running does not start a second
+copy: it says so and exits. (On Windows two processes can otherwise bind the same
+port, and requests then land on either one — which looks like code changes
+randomly not taking effect.)
+
 No dependencies — Python standard library and SQLite only.
 
 ## Configuration

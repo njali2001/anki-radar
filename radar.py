@@ -455,8 +455,11 @@ h2 .count { color: #8b93a1; font-weight: 400; font-size: 13.5px; margin-left: 6p
                                     padding: 0 2px; }
 .empty { color: #8b93a1; }
 /* 【处理按钮放在卡片右下角】：读完一条的动作是"看完 → 决定 → 下一条"，
-   按钮跟在内容后面最顺手；放在标题旁边会和"打开原帖"抢注意力。 */
-.acts { margin-top: 12px; display: flex; gap: 8px; }
+   按钮跟在内容后面最顺手；放在标题旁边会和"打开原帖"抢注意力。
+   【靠右】（2026-09-20 运营者定）：正文是左对齐的，按钮也贴左边的话，眼睛
+   读到最后一行还要往回找；靠右则是读完自然落到的位置，而且一列按钮对齐，
+   连着处理好几条时鼠标不用来回挪。 */
+.acts { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
 .act { cursor: pointer; border: 1px solid #2f3540; background: #1a1d22; color: #9aa3b0;
        border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 13px; }
 .act:hover { border-color: #46505f; color: #cdd3dc; }
