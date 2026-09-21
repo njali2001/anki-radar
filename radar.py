@@ -709,7 +709,14 @@ def render_page(store, config, status):
             + '</section>'
         )
 
-    err = f'<p class="err">出错了：{html.escape(status.get("error") or "")}</p>' if status.get("error") else ""
+    # 【错误要说清是谁、什么时候】：光一句"出错了：刚扫过"，隔一会儿再看根本
+    # 分不清是刚才那次还是半小时前那次。
+    err = ""
+    if status.get("error"):
+        who = SOURCE_LABELS.get(status.get("error_source"), ("", ""))[0]
+        when = time.strftime("%H:%M", time.localtime(status.get("error_at") or time.time()))
+        err = (f'<p class="err">{html.escape(who)} · {when} 出错了：'
+               f'{html.escape(status["error"])}</p>')
     stamp = time.strftime("%Y-%m-%d %H:%M")
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar</title>

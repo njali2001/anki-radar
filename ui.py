@@ -14,8 +14,8 @@ file:// 页面调不动本机的 Python。一个只绑 127.0.0.1 的小服务是
 
 import json
 import threading
-import traceback
 import time
+import traceback
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,10 +32,27 @@ class State:
         self.busy = None      # 正在扫哪个源
         self.step = ""        # 正在做什么，直接显示给人看
         self.error = ""
+        self.error_source = ""
+        self.error_at = 0
 
     def snapshot(self):
         with self.lock:
-            return {"busy": self.busy, "step": self.step, "error": self.error}
+            return {"busy": self.busy, "step": self.step, "error": self.error,
+                    "error_source": self.error_source, "error_at": self.error_at}
+
+    def take_snapshot(self):
+        """整页渲染时用：把错误取走，显示过一次就不再显示。
+
+        【错误是"刚才那一下的结果"，不是常驻状态】：它原来一直留在内存里，刷新
+        页面照样出现，看着就像刚发生的——运营者 2026-09-20 就这么被骗过一次：
+        半小时前测出来的一句"刚扫过，329 分钟后可以再扫"，在一次无关的刷新之后
+        还挂在页面顶上，以为是刚刚又扫了一遍。
+        """
+        with self.lock:
+            snap = {"busy": self.busy, "step": self.step, "error": self.error,
+                    "error_source": self.error_source, "error_at": self.error_at}
+            self.error, self.error_source, self.error_at = "", "", 0
+            return snap
 
     def start(self, source):
         with self.lock:
@@ -50,6 +67,8 @@ class State:
 
     def finish(self, error=""):
         with self.lock:
+            if error:
+                self.error_source, self.error_at = self.busy or "", int(time.time())
             self.busy, self.step, self.error = None, "", error
 
 
@@ -93,7 +112,7 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
         def _route(self):
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/":
-                self._send(render_page(store, config, state.snapshot()))
+                self._send(render_page(store, config, state.take_snapshot()))
             elif parsed.path == "/status":
                 self._send(json.dumps(state.snapshot()), "application/json")
             elif parsed.path == "/brief":
