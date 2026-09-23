@@ -19,6 +19,27 @@ FACTS = [
     "AnkiWeb 对【媒体总量】目前没有上限，单个媒体文件的上限是 100 MB。"
     "所以'媒体太多传不上去'通常不是容量问题，而是慢或超时。（同上来源）",
 
+    # --- profile 与 AnkiWeb 账号的关系（官方手册 profiles.html）---------------
+    "一个 AnkiWeb 账号只能同步一个 profile。把两个 profile 连到同一个 AnkiWeb "
+    "账号上，其中一个的数据会被另一个覆盖掉——官方手册的原话是 'you will "
+    "overwrite the data from one profile with the data from the other'。"
+    "所以同一台电脑上的两个人，官方的建议是各自注册一个 AnkiWeb 账号。"
+    "（来源：docs.ankiweb.net/profiles.html）",
+
+    "官方不建议用 profile 来拆分自己的内容：'Profiles are primarily intended to "
+    "be used by different people, and are not recommended for splitting up your "
+    "own content.' 想把两个 profile 合成一个，官方给的办法是从 A 导出牌组、"
+    "导入到 B，逐个搬完。（同上来源）",
+
+    "AnkiDroid 不支持 profile（官方手册原话：'AnkiDroid does not support "
+    "profiles.'）。所以多 profile 这件事，在安卓上讲不通。（同上来源）",
+
+    "LeeAB 的套餐按档位给 1 / 2 / 3 个 profile，都在同一个账号、同一笔付费之下，"
+    "每个 profile 有自己的一套同步用户名和密码。"
+    "对比之下，在 AnkiWeb 上要多一个 profile 就得多注册一个账号（另一个邮箱、"
+    "另一套登录）。只有在对方确实是'多个人共用一台电脑'或明确想要两套互不干扰的"
+    "collection 时才值得提；官方既然不建议拆分自己的内容，就不要反过来劝人拆。",
+
     # --- 官方的自建同步服务器 ------------------------------------------------
     "Anki 官方自带一个可以自建的同步服务器，免费，文档在 docs.ankiweb.net/sync-server.html。"
     "官方把它定位为进阶功能，面向个人和家庭使用。",
