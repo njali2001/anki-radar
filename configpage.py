@@ -435,9 +435,17 @@ body.app .topbar h1 { margin: 0; padding: 0; }
          cursor: pointer; padding: 2px 4px; }
 .msg-x:hover { opacity: 1; }
 .cfg-msg ul { margin: 6px 0 0; padding-left: 18px; }
-.counts { color: var(--muted); font-size: 12.5px; margin-top: 7px; line-height: 1.8; }
-.counts b { color: var(--text-2); font-weight: 600; }
-.counts .zero { color: var(--faint); }
+table.counts { border-collapse: collapse; margin-top: 10px; font-size: 12.5px;
+               color: var(--text-2); min-width: 18rem; }
+table.counts th { text-align: left; font-weight: 600; color: var(--muted);
+                  padding: 0 1.2rem .3rem 0; border-bottom: 1px solid var(--border); }
+table.counts td { padding: .25rem 1.2rem .25rem 0; border-bottom: 1px solid var(--border); }
+table.counts tr:last-child td { border-bottom: 0; }
+table.counts .num { text-align: right; padding-right: 1.6rem; font-variant-numeric: tabular-nums; }
+table.counts .when { color: var(--muted); white-space: nowrap; }
+/* 【0 次的整行压暗，不是标红】：它未必是错的——也可能只是没人这么说。
+   标红会把"要修的东西"和"可以考虑删的东西"混为一谈。 */
+table.counts tr.zero td { color: var(--faint); }
 .try-out { margin-top: 8px; padding: 9px 12px; border-left: 3px solid var(--quote-line);
            background: var(--quote-bg); color: var(--text-2); font-size: 13px; white-space: pre-wrap; }
 .try-out.bad { border-left-color: var(--bad-line); color: var(--bad-text); }
@@ -447,6 +455,22 @@ body.app .topbar h1 { margin: 0; padding: 0; }
 def _esc(text):
     import html as html_mod
     return html_mod.escape(str(text if text is not None else ""))
+
+
+def _ago(stamp):
+    """粗到"天"就够了——这一列是用来分辨"上周还灵"和"半年没动静"的。"""
+    import time
+
+    if not stamp:
+        return "—"
+    days = int((time.time() - int(stamp)) // 86400)
+    if days <= 0:
+        return "今天"
+    if days == 1:
+        return "昨天"
+    if days < 60:
+        return f"{days} 天前"
+    return f"{days // 30} 个月前"
 
 
 def _render_field(config, spec, stats):
@@ -480,15 +504,21 @@ def _render_field(config, spec, stats):
     # lines
     text = "\n".join(str(v) for v in (value or []))
     counts = ""
-    if stats is not None and path.endswith("keywords"):
-        bits = []
-        for word in (value or []):
-            hit = stats.get(word, 0)
-            bits.append(f'<b>{_esc(word)}</b> {hit}' if hit
-                        else f'<span class="zero">{_esc(word)} 0</span>')
-        if bits:
-            counts = ('<p class="counts">库里的历史命中：' + " · ".join(bits)
-                      + '<br>命中 0 的词要么写法不对，要么确实没人这么说。</p>')
+    if stats is not None and path.endswith("keywords") and value:
+        # 【表格，不是一长串】（2026-09-23 运营者定）：十几个词用"·"连成一行，
+        # 要在里面找出哪几个是 0，得一个一个数过去。列成表就一眼看得到。
+        # 【按命中数从多到少排】：这张表是拿来做"删哪个"这个决定的，0 全在底下
+        # 最省事；表里的顺序和输入框里的顺序不一样，不影响任何功能。
+        rows = sorted(((w, *stats.get(w, (0, 0))) for w in value),
+                      key=lambda item: (-item[1], item[0]))
+        cells = "".join(
+            f'<tr class="{"zero" if not hit else ""}">'
+            f'<td>{_esc(word)}</td><td class="num">{hit}</td>'
+            f'<td class="when">{_esc(_ago(last) if hit else "—")}</td></tr>'
+            for word, hit, last in rows)
+        counts = (f'<table class="counts"><thead><tr><th>关键词</th>'
+                  f'<th class="num">命中</th><th class="when">最近一次</th></tr></thead>'
+                  f'<tbody>{cells}</tbody></table>')
     button = ""
     if path.endswith("keywords"):
         button = (f'<div class="cfg-bar" style="margin:8px 0 0">'
@@ -523,7 +553,7 @@ def render(store, config, message=None, errors=None, active=None):
     """整页。左边是分组，右边是表单——和榜单页同构，省一次学习。"""
     import radar
 
-    stats = store.keyword_stats()
+    stats = store.keyword_details()
     # 【表单要自报家门】：浏览器只提交勾上的复选框，没勾的压根不出现——所以
     # 光看"表单里有没有这个键"分不清"没勾"和"这一版表单根本没有这个字段"。
     # 页面在旧标签页里放了半天、代码又加了新字段时，后者就会发生：保存一下，

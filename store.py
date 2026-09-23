@@ -297,6 +297,24 @@ class Store:
                         counts[keyword] = counts.get(keyword, 0) + 1
             return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
+    def keyword_details(self):
+        """每个关键词：命中多少条、最近一次是什么时候。
+
+        【"0 次"不够用】：一个从没命中过的词，可能是写法不对（sincroniz 少了
+        星号），也可能是确实没人这么说。加上"最近一次"，半年前还灵、现在哑了
+        的词也能看出来——那多半是对面换了说法。
+        """
+        with self.lock:
+            detail = {}
+            for row in self.db.execute("SELECT matched, found_at FROM posts"):
+                for keyword in (row["matched"] or "").split(","):
+                    keyword = keyword.strip()
+                    if not keyword:
+                        continue
+                    count, last = detail.get(keyword, (0, 0))
+                    detail[keyword] = (count + 1, max(last, int(row["found_at"] or 0)))
+            return detail
+
     def totals(self):
         with self.lock:
             row = self.db.execute(
