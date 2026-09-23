@@ -133,10 +133,8 @@ SECTIONS = [
                   "关掉就只按关键词，噪音会多很多。"),
             field("ai.model", "主用模型", "text",
                   "模型会下线：撞上 404 / model not found 就在这里换。"),
-            field("ai.api_key", "主用 API key", "secret"),
             field("ai.fallback.model", "备用模型", "text",
                   "主用限流或 503 时自动换它；写要点和翻译也走备用那家。"),
-            field("ai.fallback.api_key", "备用 API key", "secret"),
             field("ai.min_score", "默认 AI 门槛（0–3）", "int",
                   "各个源可以自己覆盖这个值。", min=1, max=3),
             field("ai.candidates", "一轮最多给 AI 看几条", "int", min=1, max=200),
@@ -361,6 +359,13 @@ body.app .topbar h1 { margin: 0; padding: 0; }
 .cfg-msg { padding: 10px 14px; border-left: 3px solid #3d4d24; background: #171b17;
            color: #cfe8a8; font-size: 13.5px; margin: 0 0 18px; }
 .cfg-msg.bad { border-left-color: #6b3a2c; background: #1d1614; color: #f0a08a; }
+/* 【提示条要能关掉】（2026-09-23 运营者提）："保存好了"看过一眼就没用了，
+   却一直占着表单顶上那块地方。 */
+.cfg-msg { position: relative; padding-right: 34px; }
+.msg-x { position: absolute; top: 4px; right: 8px; border: 0; background: none;
+         color: inherit; opacity: .55; font-size: 18px; line-height: 1;
+         cursor: pointer; padding: 2px 4px; }
+.msg-x:hover { opacity: 1; }
 .cfg-msg ul { margin: 6px 0 0; padding-left: 18px; }
 .counts { color: #8b93a1; font-size: 12.5px; margin-top: 7px; line-height: 1.8; }
 .counts b { color: #cdd3dc; font-weight: 600; }
@@ -459,12 +464,15 @@ def render(store, config, message=None, errors=None, active=None):
         panels.append(f'<section class="panel{on}" data-source="cfg-{section["key"]}">'
                       f'<h2>{_esc(section["label"])}</h2>' + "".join(body) + "</section>")
 
+    close = ('<button type="button" class="msg-x" aria-label="关闭" '
+             'onclick="this.parentNode.remove()">&times;</button>')
     note = ""
     if errors:
-        note = ('<div class="cfg-msg bad">这些地方要先改掉，整份都还没保存：<ul>'
+        note = ('<div class="cfg-msg bad">' + close
+                + "这些地方要先改掉，整份都还没保存：<ul>"
                 + "".join(f"<li>{_esc(e)}</li>" for e in errors) + "</ul></div>")
     elif message:
-        note = f'<div class="cfg-msg">{_esc(message)}</div>'
+        note = f'<div class="cfg-msg">{close}{_esc(message)}</div>'
 
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar 设置</title>
@@ -486,8 +494,9 @@ def render(store, config, message=None, errors=None, active=None):
   <main class="main">
     {note}
     {"".join(panels)}
-    <p class="note">更少见的选项（数据库路径、AI 的 provider 和 base_url）还在
-      config.json 里——它们改错了整个工具会哑掉，不适合放在随手能点的地方。</p>
+    <p class="note">两把 AI 密钥和更少见的选项（数据库路径、AI 的 provider 和
+      base_url）都在 config.json 里。密钥装好就几乎不动，而改错 provider 或
+      base_url 整个工具会哑掉——都不适合放在随手能点的地方。</p>
   </main>
 </div>
 </form>
