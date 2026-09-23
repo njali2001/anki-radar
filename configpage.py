@@ -130,10 +130,6 @@ SECTIONS = [
         "label": "AI 与额度",
         "fields": [
             field("ai.enabled", "用 AI 筛选", "bool"),
-            field("ai.model", "主用模型", "text",
-                  "模型会下线：撞上 404 / model not found 就在这里换。"),
-            field("ai.fallback.model", "备用模型", "text",
-                  "主用限流或 503 时自动换它；写要点和翻译也走备用那家。"),
             field("ai.daily_request_budget", "每天大约用多少次请求", "int",
                   "只用来画进度条的分母。Gemini 的免费额度上限没有接口可查，"
                   "所以这是你自己设的预算，不是官方数字。", min=1, max=100000),
@@ -180,9 +176,8 @@ GROUPS = {
                    "youtube.min_interval_minutes", "youtube.pause_seconds"]),
     ],
     "ai": [
-        ("用哪个模型", ["ai.enabled", "ai.model", "ai.fallback.model",
-                   "ai.daily_request_budget"]),
-        ("筛得多严", ["ai.min_score", "ai.candidates", "ai.batch_size"]),
+        ("AI 筛选", ["ai.enabled", "ai.min_score", "ai.candidates", "ai.batch_size",
+                  "ai.daily_request_budget"]),
     ],
 }
 
@@ -642,6 +637,10 @@ def render(store, config, message=None, errors=None, active=None):
     label();
   }});
 }})();
+
+if (location.search.indexOf("saved=") >= 0) {{
+  try {{ history.replaceState({{}}, "", location.pathname + location.hash); }} catch (e) {{}}
+}}
 
 const items = [...document.querySelectorAll(".src-item[data-source]")];
 const panels = [...document.querySelectorAll(".panel")];
