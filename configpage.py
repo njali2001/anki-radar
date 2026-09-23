@@ -556,9 +556,6 @@ def render(store, config, message=None, errors=None, active=None):
   <main class="main">
     {note}
     {"".join(panels)}
-    <p class="note">两把 AI 密钥和更少见的选项（数据库路径、AI 的 provider 和
-      base_url）都在 config.json 里。密钥装好就几乎不动，而改错 provider 或
-      base_url 整个工具会哑掉——都不适合放在随手能点的地方。</p>
   </main>
 </div>
 </form>
