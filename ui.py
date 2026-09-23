@@ -96,22 +96,76 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
             self.wfile.write(data)
 
         def do_POST(self):
-            """【回复要用 POST】：一段中文回复几百上千字，塞进查询串会被网址
-            长度卡住，而且回复内容会被打进任何一层访问日志里。"""
+            """【回复和保存配置都用 POST】：一段中文回复、一整份配置，塞进查询串
+            会被网址长度卡住，而且内容会被打进任何一层访问日志里。"""
             try:
-                if urllib.parse.urlparse(self.path).path != "/reply":
-                    self._send("not found", "text/plain; charset=utf-8", 404)
-                    return
+                path = urllib.parse.urlparse(self.path).path
                 length = int(self.headers.get("Content-Length") or 0)
-                payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-                row = store.get((payload.get("id") or "").strip())
-                if not row:
-                    self._send(json.dumps({"error": "没有这一条"}), "application/json", 404)
-                    return
-                import ai
+                raw = self.rfile.read(length)
 
-                text = ai.reply_in_their_language(row, payload.get("text") or "", config.get("ai", {}))
-                self._send(json.dumps({"text": text}), "application/json")
+                if path == "/reply":
+                    payload = json.loads(raw.decode("utf-8") or "{}")
+                    row = store.get((payload.get("id") or "").strip())
+                    if not row:
+                        self._send(json.dumps({"error": "没有这一条"}), "application/json", 404)
+                        return
+                    import ai
+
+                    text = ai.reply_in_their_language(
+                        row, payload.get("text") or "", config.get("ai", {}))
+                    self._send(json.dumps({"text": text}), "application/json")
+                    return
+
+                import configpage
+
+                if path == "/config":
+                    # 【扫描时不许保存】：扫到一半换配置，这一轮会得到一份
+                    # 半新半旧的结果，而且没人说得清是按哪份配置跑的。
+                    if state.snapshot().get("busy"):
+                        self._send(configpage.render(
+                            store, config,
+                            errors=["正在扫描，等这一轮扫完再保存"]))
+                        return
+                    form = configpage.parse_form(raw.decode("utf-8"))
+                    updated, errors = configpage.apply_form(configpage.load(), form)
+                    if errors:
+                        # 【错了就把人填的东西原样显示回去】：用提交上来的那份
+                        # 渲染，而不是磁盘上那份——否则他刚敲的十行关键词没了。
+                        self._send(configpage.render(store, updated, errors=errors))
+                        return
+                    configpage.save(updated)
+                    # 【热更新】：这个 dict 就是扫描、打分、渲染共用的那一个，
+                    # 就地换内容，所有拿着它的地方立刻看到新值，不用重启。
+                    config.clear()
+                    config.update(updated)
+                    self._send(configpage.render(store, config, message="保存好了。"))
+                    return
+
+                if path == "/config/try":
+                    payload = json.loads(raw.decode("utf-8") or "{}")
+                    words = configpage._lines(payload.get("text"))
+                    if not words:
+                        self._send(json.dumps({"error": "先写几个关键词"}), "application/json")
+                        return
+                    result = configpage.try_keywords(store, payload.get("source") or None, words)
+                    self._send(json.dumps(result, ensure_ascii=False), "application/json")
+                    return
+
+                if path == "/config/restore":
+                    if state.snapshot().get("busy"):
+                        self._send(json.dumps({"error": "正在扫描，等这一轮扫完"}),
+                                   "application/json")
+                        return
+                    if not configpage.restore():
+                        self._send(json.dumps({"error": "还没有备份可以恢复"}),
+                                   "application/json")
+                        return
+                    config.clear()
+                    config.update(configpage.load())
+                    self._send(json.dumps({"ok": True}), "application/json")
+                    return
+
+                self._send("not found", "text/plain; charset=utf-8", 404)
             except Exception as exc:  # noqa: BLE001
                 self._send(json.dumps({"error": str(exc)[:300]}), "application/json", 502)
 
@@ -129,6 +183,10 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/":
                 self._send(render_page(store, config, state.take_snapshot()))
+            elif parsed.path == "/config":
+                import configpage
+
+                self._send(configpage.render(store, config))
             elif parsed.path == "/status":
                 self._send(json.dumps(state.snapshot()), "application/json")
             elif parsed.path == "/brief":

@@ -141,6 +141,23 @@ class Store:
             ).fetchone()
             return dict(row) if row else None
 
+    def all_for(self, source, limit=500):
+        """库里这个源的全部记录（含已处理、已刷掉的）。
+
+        【"试一下关键词"要的是全部，不是待处理的那几条】：被刷掉和已处理的同样
+        是真实语料，拿它们试才看得出一个词到底逮不逮得住东西。
+        """
+        with self.lock:
+            if source:
+                rows = self.db.execute(
+                    "SELECT title, body FROM posts WHERE source = ?"
+                    " ORDER BY found_at DESC LIMIT ?", (source, limit)).fetchall()
+            else:
+                rows = self.db.execute(
+                    "SELECT title, body FROM posts ORDER BY found_at DESC LIMIT ?",
+                    (limit,)).fetchall()
+            return [dict(r) for r in rows]
+
     def set_verdict(self, external_id, value):
         """记下你对这一条的处理：done / ignored。"""
         with self.lock:

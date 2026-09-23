@@ -121,8 +121,21 @@ No dependencies — Python standard library and SQLite only.
 
 ## Configuration
 
-Copy `config.example.json` to `config.json` and edit. Both sources work without
-any credentials.
+Copy `config.example.json` to `config.json`. After that you can edit most of it
+from the **设置** page in the local UI rather than by hand — keywords as one per
+line instead of a JSON array, with how many stored posts each one has ever
+matched next to it, and a **试一下** button that runs a proposed keyword list
+against the posts already in the database so you can see what a change would
+catch before spending a scan on it. A save validates everything first and writes
+nothing at all if one field is wrong, keeps the previous file as `config.bak.json`
+(there is a restore button), preserves the `_`-prefixed comment keys, and is
+refused while a scan is running. API keys are never rendered back into the page:
+it says how many characters are stored, and an empty box means "leave it alone".
+
+The remaining settings live in the file only — the database path, and the AI
+provider and base URL, which take the whole tool down if they are wrong.
+
+The fields, whether you edit them in the page or the file:
 
     user_agent      identify yourself; Reddit asks for this and rate-limits
                     vague ones. ASCII only (HTTP headers cannot hold anything else).

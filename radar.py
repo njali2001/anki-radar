@@ -555,6 +555,12 @@ body.app .side::-webkit-scrollbar-thumb, body.app .main::-webkit-scrollbar-thumb
 .src-when { color: #8b93a1; font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
 .src-when.hold { color: #e8b0a0; }
 .idle-step { font-size: 12.5px; }
+/* 【设置放在侧栏最下面】：它是"偶尔来一次"的东西，不该和每天都点的扫描按钮
+   抢位置，但也不能藏到找不着。 */
+.cfg-link { display: block; margin-top: 4px; padding: 8px 14px; color: #8b93a1;
+            font-size: 13px; text-decoration: none; border: 1px solid transparent;
+            border-radius: 12px; }
+.cfg-link:hover { color: #cdd3dc; border-color: #2f3540; }
 .badge { margin-left: auto; background: #2f3540; color: #cdd3dc; border-radius: 999px;
          font-size: 12px; padding: 1px 9px; }
 .src-item.on .badge { background: #3d4d24; color: #dcf5a0; }
@@ -922,7 +928,8 @@ def render_page(store, config, status):
 <body class="app">
 <h1>值得看的帖子<span class="total">（{total}）</span></h1>
 <div class="wrap">
-  <aside class="side">{''.join(side)}{idle_step}</aside>
+  <aside class="side">{''.join(side)}{idle_step}
+    <a class="cfg-link" href="/config">设置</a></aside>
   <main class="main">{err}{''.join(panels)}
 <p class="note">
   这些是<strong>链接，不是草稿</strong>。回复请用你自己的账号发，提到 LeeAB 时说明身份。<br>
