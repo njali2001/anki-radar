@@ -322,6 +322,11 @@ def parse_form(body):
 # --- 页面 ---------------------------------------------------------------------
 
 CONFIG_STYLE = """
+/* 【表单也要接进那条 flex 链】：榜单页是 body.app > .wrap，两栏各滚各的；
+   配置页在中间多包了一层 <form>，链子就断在这里——.wrap 拿不到高度，.main 的
+   overflow-y:auto 等于没写，内容被 body 的 overflow:hidden 直接裁掉，鼠标怎么
+   滚都不动（2026-09-23 运营者只看得到前两个字段）。 */
+body.app form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .cfg-field { margin: 0 0 22px; }
 .cfg-field label.name { display: block; color: #e8eaed; font-size: 14.5px; margin-bottom: 4px; }
 .cfg-hint { color: #8b93a1; font-size: 12.5px; line-height: 1.6; margin: 0 0 8px; }
