@@ -148,6 +148,8 @@
     "max_videos_for_comments": 8,
     "max_age_days": 180,
     "min_interval_minutes": 360,
-    "pause_seconds": 2
+    "pause_seconds": 2,
+    "_translate": "打完分之后，把留下来的非中文、非英文评论翻成中文，显示在原文下面。中文和英文不翻。",
+    "translate": true
   }
 }

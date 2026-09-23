@@ -368,6 +368,28 @@ def min_score_for(config, source):
     return int(config.get("ai", {}).get("min_score", 2))
 
 
+def translate_pending(store, config, source):
+    """把这个源里留下来、还没翻过的几条翻成中文。
+
+    【只翻留下来的】：被 AI 刷掉的不会再出现在页面上，翻它们是白花额度。
+    【失败不挡事】：翻不出来就照样显示原文，下一轮再试。
+    """
+    section = SOURCE_CONFIG_KEY.get(source)
+    if not (section and config.get(section, {}).get("translate")):
+        return
+    cfg = config.get("ai", {})
+    if not (cfg.get("enabled") and cfg.get("api_key")):
+        return
+    rows = store.untranslated_pending(source, int(config.get("daily_limit", 5)) * 3)
+    if not rows:
+        return
+    print(f"  翻译：{len(rows)} 条…", flush=True)
+    try:
+        store.set_translations(ai.translate(rows, cfg))
+    except ai.AIError as exc:
+        print(f"  翻译失败（这一轮显示原文）：{exc}", flush=True)
+
+
 def pick_for(store, config, limit, source, use_ai=True):
     """给某一个源挑出这一批。被 AI 刷掉的标成 ai_rejected，不再出现在任何榜单里。"""
     cfg = config.get("ai", {})
@@ -378,6 +400,7 @@ def pick_for(store, config, limit, source, use_ai=True):
 
     candidates = store.unscored_pending(source, int(cfg.get("candidates", 25)))
     if not candidates:
+        translate_pending(store, config, source)
         return store.pending(source, limit)
 
     print(f"  AI 打分：{len(candidates)} 条…", flush=True)
@@ -400,6 +423,7 @@ def pick_for(store, config, limit, source, use_ai=True):
         store.mark_rejected(rejected)
         print(f"  AI 判定不相关，刷掉 {len(rejected)} 条", flush=True)
     store.mark_reported([r["external_id"] for r in candidates if r["external_id"] in scores], now)
+    translate_pending(store, config, source)
     return store.pending(source, limit)
 
 
@@ -569,6 +593,10 @@ h2 .count { color: #8b93a1; font-weight: 400; font-size: 13.5px; margin-left: 6p
 .snippet mark, .card a.title mark { background: #3d4d24; color: #dcf5a0; border-radius: 3px;
                                     padding: 0 2px; }
 .empty { color: #8b93a1; }
+/* 【译文放在原文下面，而不是替换掉原文】：回复时要引用对方的原话（报错信息、
+   按钮名），而且机器翻译偶尔会翻错，原文得在旁边能对照。 */
+.zh { margin-top: 10px; padding: 8px 12px; border-left: 3px solid #2f4a63;
+      background: #171b21; color: #cdd3dc; font-size: 14.5px; white-space: pre-wrap; }
 /* 【处理按钮放在卡片右下角】：读完一条的动作是"看完 → 决定 → 下一条"，
    按钮跟在内容后面最顺手；放在标题旁边会和"打开原帖"抢注意力。
    【靠右】（2026-09-20 运营者定）：正文是左对齐的，按钮也贴左边的话，眼睛
@@ -702,6 +730,7 @@ def cards_for(rows):
       {score_tag(row)}
     </div>
     {f'<div class="snippet">{highlight(snippet, hits)}</div>' if snippet else ""}
+    {f'<div class="zh">{html.escape(row["translation"])}</div>' if row.get("translation") else ""}
     <div class="acts" data-id="{html.escape(row['external_id'])}">
       <button class="act brief-btn">写要点</button>
       <button class="act done" data-value="done">已处理</button>

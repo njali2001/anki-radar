@@ -50,7 +50,8 @@ class Store:
         self.db.executescript(SCHEMA)
         # 【老库要补列】：这个文件在用户机器上，不能每加一个字段就让他删库重来。
         have = {r["name"] for r in self.db.execute("PRAGMA table_info(posts)")}
-        for column, ddl in (("ai_score", "INTEGER"), ("ai_reason", "TEXT")):
+        for column, ddl in (("ai_score", "INTEGER"), ("ai_reason", "TEXT"),
+                            ("translation", "TEXT")):
             if column not in have:
                 self.db.execute(f"ALTER TABLE posts ADD COLUMN {column} {ddl}")
         self.db.commit()
@@ -218,6 +219,26 @@ class Store:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def untranslated_pending(self, source, limit):
+        """还等着处理、还没翻译过的。translation 为 '' 表示"看过了，不用翻"。"""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT * FROM posts WHERE source = ? AND verdict IS NULL AND translation IS NULL"
+                " ORDER BY COALESCE(ai_score, -1) DESC, posted_at DESC LIMIT ?",
+                (source, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def set_translations(self, translations):
+        """{external_id: 中文译文}。【空串也要写】：它的意思是"本来就是中文或英文，
+        不用翻"，不写的话下一轮又会拿去问一遍、白花额度。"""
+        with self.lock:
+            self.db.executemany(
+                "UPDATE posts SET translation = ? WHERE external_id = ?",
+                [(v, k) for k, v in translations.items()],
+            )
+            self.db.commit()
 
     def set_scores(self, scores):
         """写回 AI 的打分。{external_id: (score, reason)}"""

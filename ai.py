@@ -16,6 +16,7 @@
 """
 
 import json
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -78,6 +79,16 @@ def _post(url, payload, headers):
                 time.sleep(wait)
                 continue
             raise AIError(f"HTTP {exc.code}：{detail}") from exc
+        except socket.timeout as exc:
+            # 【读超时必须变成 AIError】：它原本是 socket.timeout，既不算 HTTPError
+            # 也不算 URLError，于是一路抛穿 _ask，既不重试也不切备用，整轮打分
+            # 直接崩掉——表现是帖子已经入库却一条都没打分，页面上于是摆着一堆
+            # 没筛过的噪音（2026-09-21 运营者的那一轮 Reddit 就是这么没的）。
+            if attempt < len(BACKOFF):
+                print(f"  模型没在 {TIMEOUT} 秒内回话，等 {wait} 秒再试…", flush=True)
+                time.sleep(wait)
+                continue
+            raise AIError(f"连续 {len(BACKOFF)} 次都没在 {TIMEOUT} 秒内回话") from exc
         except urllib.error.URLError as exc:
             raise AIError(str(exc.reason)) from exc
     raise AIError("重试之后仍然失败")
@@ -109,7 +120,7 @@ def _extract_json(text):
     raise AIError(f"模型没有返回 JSON：{text[:150]}")
 
 
-def _ask_gemini(prompt, cfg):
+def _ask_gemini(prompt, cfg, want_json=True):
     model = cfg.get("model", "gemini-2.5-flash")
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -121,12 +132,12 @@ def _ask_gemini(prompt, cfg):
         # 会让人不再相信这个分数。
         # 【在接口层面强制 JSON】：只在提示词里写"请输出 JSON"是不够的，
         # 模型偶尔会退化成自由格式，那一整批打分就全丢了。
-        "generationConfig": {
-            "temperature": 0,
-            "maxOutputTokens": 4096,
-            "responseMimeType": "application/json",
-        },
+        # 【但只对要 JSON 的调用开】：答题要点要的是给人读的纯文本，逼它输出
+        # JSON 会得到一段裹在引号里的东西。
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 4096},
     }
+    if want_json:
+        payload["generationConfig"]["responseMimeType"] = "application/json"
     data = _post(url, payload, {})
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -134,16 +145,21 @@ def _ask_gemini(prompt, cfg):
         raise AIError(f"返回的结构不对：{json.dumps(data)[:200]}") from exc
 
 
-def _ask_openai_compatible(prompt, cfg):
+def _ask_openai_compatible(prompt, cfg, want_json=True):
     """OpenAI 兼容接口：OpenAI 本身、DeepSeek、以及一堆网关都走这个形状。"""
     base = cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
     payload = {
         "model": cfg.get("model", "gpt-4o-mini"),
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
-        # 同上：接口层面要求 JSON 对象（所以提示词里的形状是 {"items": [...]}）。
-        "response_format": {"type": "json_object"},
     }
+    # 同上：接口层面要求 JSON 对象（所以提示词里的形状是 {"items": [...]}）。
+    # 【Groq 还多一条规矩】：用 response_format 时，提示词里必须出现 "json"
+    # 这个词，否则 400 —— 'messages' must contain the word 'json' in some form。
+    # 答题要点的提示词里当然没有这个词，所以这个参数只能按需开，不能一直挂着
+    # （2026-09-23 运营者点"写要点"就撞上了这个 400）。
+    if want_json:
+        payload["response_format"] = {"type": "json_object"}
     data = _post(
         f"{base}/chat/completions", payload, {"Authorization": f"Bearer {cfg['api_key']}"}
     )
@@ -156,7 +172,7 @@ def _ask_openai_compatible(prompt, cfg):
 ASKERS = {"gemini": _ask_gemini, "openai": _ask_openai_compatible, "deepseek": _ask_openai_compatible}
 
 
-def _ask(prompt, cfg):
+def _ask(prompt, cfg, want_json=True):
     """按配置问一次。主用挂了就换备用。
 
     【为什么要备用】：免费额度是按天算的，而模型偶尔会 503（2026-09-20 实测
@@ -180,7 +196,7 @@ def _ask(prompt, cfg):
         if not settings.get("api_key"):
             raise AIError("config.json 的 ai.api_key 是空的")
         try:
-            return asker(prompt, settings)
+            return asker(prompt, settings, want_json=want_json)
         except AIError as exc:
             last = exc
             if index + 1 < len(chain):
@@ -212,6 +228,53 @@ def score(rows, cfg):
             except (KeyError, ValueError, IndexError):
                 continue
             results[row["external_id"]] = (int(item.get("score", 0)), str(item.get("reason", ""))[:120])
+    return results
+
+
+# --- 翻译 --------------------------------------------------------------------
+
+TRANSLATE_PROMPT = """Translate forum comments about the flashcard app Anki into
+natural, plain Simplified Chinese, for a reader who does not know the source
+language.
+
+For each item: if it is already in Chinese or English, return an empty "zh".
+Otherwise translate the whole text faithfully — keep the person's tone, keep
+error messages and button labels in their original wording inside 「」 so they
+can be quoted back, and do not add, summarise or explain anything.
+
+Answer with JSON only, in this exact shape:
+{"items": [{"id": <id>, "lang": "<ISO code>", "zh": "<translation or empty>"}]}
+
+Items:
+"""
+
+
+def translate(rows, cfg):
+    """把非中文、非英文的条目翻成中文。返回 {external_id: 译文或空串}。
+
+    【为什么自己翻，不用 YouTube 那个"翻译"按钮】（2026-09-21 运营者问）：那个
+    按钮要一条条点开原视频才有，而且不是每条评论都有。这里是在打完分之后，
+    只把留下来的几条一次翻完，存进库里——页面上直接看中文，原文还在上面。
+
+    【中文和英文不翻】：英文运营者自己读得懂，翻了反而多一段要看的字。
+    由模型判断语言，因为葡语不带重音也照样是葡语，靠字符集判断不准。
+    """
+    results = {}
+    batch_size = int(cfg.get("translate_batch_size", 10))
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start : start + batch_size]
+        lines = []
+        for index, row in enumerate(batch):
+            text = "\n".join(x for x in ((row["title"] or "").strip(),
+                                        (row["body"] or "").strip()[:800]) if x)
+            lines.append(json.dumps({"id": index, "text": text}, ensure_ascii=False))
+        answer = _ask(TRANSLATE_PROMPT + "\n".join(lines), cfg)
+        for item in _extract_json(answer):
+            try:
+                row = batch[int(item["id"])]
+            except (KeyError, ValueError, IndexError):
+                continue
+            results[row["external_id"]] = str(item.get("zh") or "").strip()[:2000]
     return results
 
 
@@ -275,4 +338,5 @@ def brief(row, cfg):
          "where": row.get("community") or "", "kind": row.get("kind") or "post"},
         ensure_ascii=False,
     )
-    return _ask(prompt + body, settings).strip()
+    # 【不要 JSON】：这里要的是给人抄材料用的纯文本。
+    return _ask(prompt + body, settings, want_json=False).strip()
