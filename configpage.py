@@ -379,8 +379,12 @@ body.app .topbar h1 { margin: 0; padding: 0; }
 .quota { margin: 0 0 26px; }
 .quota-row { border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
              padding: 11px 14px; margin-bottom: 8px; }
-.quota-row b { display: block; color: var(--text-2); font-size: 13.5px; font-weight: 600; }
-.quota-use { display: block; color: var(--muted); font-size: 12.5px; margin: 2px 0 9px; }
+/* 【名字在左，标签在右，同一行】：标签用的就是榜单卡片上那套 .tag。 */
+.quota-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+              flex-wrap: wrap; }
+.quota-row b { color: var(--text-2); font-size: 13.5px; font-weight: 600; }
+.quota-tags { margin-left: auto; white-space: nowrap; }
+.quota-tags .tag { margin-right: 0; margin-left: 6px; font-size: 12px; }
 /* 条子照 dashboard 那套：一整条圆角轨道，用掉的部分着色，读数摆在条子外面
    ——压在条子里的话，灰色越窄字越放不下，迟早读不出来。 */
 .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
@@ -539,9 +543,11 @@ def _render_usage(store, config):
             f'<div class="bar-fill {b["level"]}" style="width:{b["percent"]}%"></div></div>'
             f'<span class="bar-caption">{_esc(b["note"])}</span>'
             f'</div>' for b in row["bars"])
-        use = (f'<span class="quota-use">{_esc(row["use"])}</span>'
-               if row.get("use") else "")
-        cells.append(f'<div class="quota-row"><b>{_esc(row["name"])}</b>{use}{bars}</div>')
+        tags = "".join(f'<span class="tag">{_esc(t)}</span>' for t in row.get("tags", []))
+        cells.append(f'<div class="quota-row">'
+                     f'<div class="quota-head"><b>{_esc(row["name"])}</b>'
+                     f'<span class="quota-tags">{tags}</span></div>'
+                     f'{bars}</div>')
     return f'<div class="quota">{"".join(cells)}</div>'
 
 
