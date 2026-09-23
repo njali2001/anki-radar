@@ -132,6 +132,14 @@ nothing at all if one field is wrong, keeps the previous file as `config.bak.jso
 refused while a scan is running. API keys are never rendered back into the page:
 it says how many characters are stored, and an empty box means "leave it alone".
 
+The same page shows what today has cost, one line per provider, each saying
+where its number came from: Groq reports real remaining requests and tokens in
+its response headers, Gemini reports nothing of the sort so its line is a count
+this tool kept itself, and the YouTube line is arithmetic on published prices
+(100 quota units per search, 1 per video's comments, 10,000 free per day). An
+estimate presented as a measurement is worse than no number, because the number
+is what you decide "one more pass or not" on.
+
 The remaining settings live in the file only — the database path, and the AI
 provider and base URL, which take the whole tool down if they are wrong.
 

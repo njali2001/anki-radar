@@ -57,7 +57,17 @@ RETRY_CODES = (429, 503)
 BACKOFF = (5, 15, 40)
 
 
-def _post(url, payload, headers):
+# 【报账用的钩子】：ai.py 自己不认识 store，也不该认识——它只管问模型。
+# 谁用它谁在启动时把这个钩子指到一个会记账的函数上（radar 的 --serve 和命令行
+# 都会设）。没设的时候是个空函数，行为和以前一模一样。
+def _no_record(**kwargs):
+    pass
+
+
+RECORD = _no_record
+
+
+def _post(url, payload, headers, with_headers=False):
     body = json.dumps(payload).encode("utf-8")
     for attempt, wait in enumerate(BACKOFF, start=1):
         request = urllib.request.Request(url, data=body, method="POST")
@@ -71,7 +81,8 @@ def _post(url, payload, headers):
             request.add_header(key, value)
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-                return json.loads(response.read().decode("utf-8"))
+                data = json.loads(response.read().decode("utf-8"))
+                return (data, dict(response.headers)) if with_headers else data
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:300]
             if exc.code in RETRY_CODES and attempt < len(BACKOFF):
@@ -139,6 +150,8 @@ def _ask_gemini(prompt, cfg, want_json=True):
     if want_json:
         payload["generationConfig"]["responseMimeType"] = "application/json"
     data = _post(url, payload, {})
+    RECORD(provider="gemini", calls=1,
+           tokens=int((data.get("usageMetadata") or {}).get("totalTokenCount") or 0))
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError) as exc:
@@ -160,9 +173,13 @@ def _ask_openai_compatible(prompt, cfg, want_json=True):
     # （2026-09-23 运营者点"写要点"就撞上了这个 400）。
     if want_json:
         payload["response_format"] = {"type": "json_object"}
-    data = _post(
-        f"{base}/chat/completions", payload, {"Authorization": f"Bearer {cfg['api_key']}"}
+    data, headers = _post(
+        f"{base}/chat/completions", payload,
+        {"Authorization": f"Bearer {cfg['api_key']}"}, with_headers=True,
     )
+    RECORD(provider=cfg, calls=1,
+           tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
+           headers=headers)
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as exc:

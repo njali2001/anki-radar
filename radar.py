@@ -22,6 +22,7 @@ from pathlib import Path
 
 import ai
 import sources
+import usage
 import ui
 from store import Store
 
@@ -169,6 +170,8 @@ def collect(config, use_sample, only=None, progress=None):
             say(f"YouTube 搜索：{entry['query']}")
             try:
                 found.extend(sources.youtube_videos(entry["query"], key, lang=entry.get("lang")))
+                # 【按官方单价记账】：YouTube 的响应里没有额度，但单价是固定的。
+                ai.RECORD(provider="youtube", calls=1, units=usage.SEARCH_UNITS)
             except sources.RateLimited as exc:
                 say("YouTube 配额用完了，这一轮到此为止")
                 exc.collected = items
@@ -190,6 +193,7 @@ def collect(config, use_sample, only=None, progress=None):
             say(f"YouTube 评论：{video['title'][:26]}")
             try:
                 items.extend(sources.youtube_comments(video["_video_id"], key))
+                ai.RECORD(provider="youtube", calls=1, units=usage.COMMENTS_UNITS)
             except sources.RateLimited as exc:
                 say("YouTube 配额用完了，这一轮到此为止")
                 exc.collected = items
@@ -1170,6 +1174,16 @@ def main():
     if args.sample:
         database = "radar-sample.sqlite3"
     store = Store(HERE / database)
+
+    # 【把报账的钩子接到 store 上】：ai.py 只管问模型，不认识库；这里把两者接起来，
+    # 于是"今天用了多少"在命令行跑和网页版跑都会被记下来，不会只算一半。
+    def _record(provider, calls=0, tokens=0, units=0, headers=None):
+        name = usage.provider_name(provider) if isinstance(provider, dict) else provider
+        usage.bump(store, name, calls=calls, tokens=tokens, units=units)
+        if headers:
+            usage.record_limits(store, name, headers)
+
+    ai.RECORD = _record
     limit = args.limit or config.get("daily_limit", 5)
 
     try:

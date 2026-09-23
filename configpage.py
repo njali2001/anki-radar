@@ -333,6 +333,13 @@ body.app form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
           padding: 26px 28px 20px; }
 body.app .topbar h1 { margin: 0; padding: 0; }
 .cfg-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.quota { margin: 0 0 26px; }
+.quota-row { border: 1px solid #262a31; border-radius: 10px; background: #1a1d22;
+             padding: 11px 14px; margin-bottom: 8px; }
+.quota-row b { display: block; color: #cdd3dc; font-size: 13.5px; font-weight: 600; }
+.quota-row span { display: block; color: #e8eaed; font-size: 14.5px; margin-top: 3px; }
+.quota-row em { display: block; color: #8b93a1; font-size: 12px; font-style: normal;
+                margin-top: 4px; }
 .cfg-field { margin: 0 0 22px; }
 .cfg-field label.name { display: block; color: #e8eaed; font-size: 14.5px; margin-bottom: 4px; }
 .cfg-hint { color: #8b93a1; font-size: 12.5px; line-height: 1.6; margin: 0 0 8px; }
@@ -417,6 +424,21 @@ def _render_field(config, spec, stats):
     return head + f'<textarea id="{path}" name="{path}">{_esc(text)}</textarea>{counts}{button}</div>'
 
 
+def _render_usage(store, config):
+    """额度块。【每一行都写清楚数字是哪儿来的】：估算和实测混在一起显示，
+    人会拿估算当实测去做"还能不能再扫一轮"的决定。"""
+    import usage
+
+    rows = usage.summary(store, config)
+    if not rows:
+        return ""
+    cells = "".join(
+        f'<div class="quota-row"><b>{_esc(r["name"])}</b>'
+        f'<span>{_esc(r["line"])}</span>'
+        f'<em>{_esc(r["source"])}</em></div>' for r in rows)
+    return f'<div class="quota">{cells}</div>'
+
+
 def render(store, config, message=None, errors=None, active=None):
     """整页。左边是分组，右边是表单——和榜单页同构，省一次学习。"""
     import radar
@@ -429,6 +451,8 @@ def render(store, config, message=None, errors=None, active=None):
         side.append(f'<div class="src-item{on}" data-source="cfg-{section["key"]}">'
                     f'<div class="src-name">{_esc(section["label"])}</div></div>')
         body = []
+        if section["key"] == "ai":
+            body.append(_render_usage(store, config))
         for spec in section["fields"]:
             spec = dict(spec, source=section.get("source"))
             body.append(_render_field(config, spec, stats))
