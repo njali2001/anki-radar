@@ -144,6 +144,46 @@ SECTIONS = [
 ]
 
 
+# 【分块】：照 app.leeab.net 的 dashboard 那套——小标题在卡片外面，内容装在
+# 一张带边框的卡里。一屏十几个输入框平铺下来，人分不清哪几个是一回事；
+# 分了块之后，"搜什么"和"多久扫一次"一眼就分得开。
+GROUPS = {
+    "general": [
+        ("找什么", ["keywords", "skip_if_contains"]),
+        ("留多少", ["max_age_days", "daily_limit"]),
+        ("怎么请求", ["pause_seconds", "user_agent"]),
+    ],
+    "ankiforum": [
+        ("开关与节流", ["anki_forum.enabled", "anki_forum.pause_seconds"]),
+    ],
+    "reddit": [
+        ("开关", ["reddit_rss.enabled"]),
+        ("搜什么", ["reddit_rss.searches", "reddit_rss.subreddits",
+                 "reddit_rss.include_comments"]),
+        ("多久扫一次", ["reddit_rss.min_interval_minutes"]),
+    ],
+    "bilibili": [
+        ("开关", ["bilibili.enabled"]),
+        ("搜什么", ["bilibili.search", "bilibili.keywords"]),
+        ("留多少", ["bilibili.max_age_days", "bilibili.min_score",
+                 "bilibili.include_videos"]),
+        ("节流", ["bilibili.max_videos_for_comments",
+                "bilibili.min_interval_minutes", "bilibili.pause_seconds"]),
+    ],
+    "youtube": [
+        ("开关与密钥", ["youtube.enabled", "youtube.api_key", "youtube.translate"]),
+        ("搜什么", ["youtube.search", "youtube.keywords"]),
+        ("留多少", ["youtube.max_age_days"]),
+        ("节流与配额", ["youtube.max_videos_for_comments",
+                   "youtube.min_interval_minutes", "youtube.pause_seconds"]),
+    ],
+    "ai": [
+        ("用哪个模型", ["ai.enabled", "ai.model", "ai.fallback.model"]),
+        ("筛得多严", ["ai.min_score", "ai.candidates", "ai.batch_size"]),
+    ],
+}
+
+
 # --- 读写配置 -----------------------------------------------------------------
 
 def load(path=CONFIG_PATH):
@@ -327,38 +367,44 @@ CONFIG_STYLE = """
 body.app form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* 【保存和恢复钉在页头】（2026-09-23 运营者定）：右栏自己滚之后，长表单往下翻
    几屏就看不见按钮了——而"改完要保存"这件事恰恰是翻到最底下才想起来的。 */
-.topbar { flex: none; display: flex; align-items: center; gap: 16px;
-          padding: 26px 28px 20px; }
 body.app .topbar h1 { margin: 0; padding: 0; }
 .cfg-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
 .quota { margin: 0 0 26px; }
-.quota-row { border: 1px solid #262a31; border-radius: 10px; background: #1a1d22;
+.quota-row { border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
              padding: 11px 14px; margin-bottom: 8px; }
-.quota-row b { display: block; color: #cdd3dc; font-size: 13.5px; font-weight: 600; }
-.quota-row span { display: block; color: #e8eaed; font-size: 14.5px; margin-top: 3px; }
-.quota-row em { display: block; color: #8b93a1; font-size: 12px; font-style: normal;
+.quota-row b { display: block; color: var(--text-2); font-size: 13.5px; font-weight: 600; }
+.quota-row span { display: block; color: var(--text); font-size: 14.5px; margin-top: 3px; }
+.quota-row em { display: block; color: var(--muted); font-size: 12px; font-style: normal;
                 margin-top: 4px; }
-.cfg-field { margin: 0 0 22px; }
-.cfg-field label.name { display: block; color: #e8eaed; font-size: 14.5px; margin-bottom: 4px; }
-.cfg-hint { color: #8b93a1; font-size: 12.5px; line-height: 1.6; margin: 0 0 8px; }
+/* 【块】：边框 + 圆角 + 卡片底色，小标题在块外面。抄的是 dashboard 的
+   .acct-title / .acct-card 那一对。 */
+.block { border: 1px solid var(--border); border-radius: 10px;
+         background: var(--surface); padding: 16px 18px 2px; margin: 0 0 22px; }
+.block-title { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted);
+               letter-spacing: .02em; }
+.block-title + .quota { margin-bottom: 22px; }
+.cfg-field { margin: 0 0 16px; }
+.cfg-field:last-child { margin-bottom: 14px; }
+.cfg-field label.name { display: block; color: var(--text); font-size: 14.5px; margin-bottom: 4px; }
+.cfg-hint { color: var(--muted); font-size: 12.5px; line-height: 1.6; margin: 0 0 8px; }
 .cfg-field input[type=text], .cfg-field textarea {
-  width: 100%; box-sizing: border-box; border: 1px solid #2f3540; border-radius: 8px;
-  background: #171a1f; color: #e8eaed; font: inherit; font-size: 14px; padding: 8px 11px; }
+  width: 100%; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--sunken); color: var(--text); font: inherit; font-size: 14px; padding: 8px 11px; }
 .cfg-field textarea { min-height: 96px; resize: vertical; line-height: 1.6;
                       font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; }
-.cfg-field input:focus, .cfg-field textarea:focus { outline: none; border-color: #46505f; }
+.cfg-field input:focus, .cfg-field textarea:focus { outline: none; border-color: var(--border-hover); }
 .cfg-field input[type=text].narrow { width: 130px; }
-.cfg-check { display: flex; align-items: center; gap: 9px; color: #e8eaed; font-size: 14.5px; }
-.cfg-check input { width: 16px; height: 16px; accent-color: #8fd14f; }
-.cfg-secret { color: #8b93a1; font-size: 12.5px; margin-bottom: 6px; }
+.cfg-check { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 14.5px; }
+.cfg-check input { width: 16px; height: 16px; accent-color: var(--ok); }
+.cfg-secret { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
 .cfg-bar { display: flex; gap: 10px; align-items: center; margin: 0 0 18px; flex-wrap: wrap; }
-.cfg-bar .grow { margin-right: auto; color: #8b93a1; font-size: 13px; }
-.cfg-save { cursor: pointer; border: 1px solid #3a4a26; background: #1f2a15; color: #cfe8a8;
+.cfg-bar .grow { margin-right: auto; color: var(--muted); font-size: 13px; }
+.cfg-save { cursor: pointer; border: 1px solid var(--save-line); background: var(--save-bg); color: var(--save-text);
             border-radius: 8px; padding: 7px 18px; font: inherit; font-size: 14px; }
 .cfg-save[disabled] { opacity: .45; cursor: default; }
-.cfg-msg { padding: 10px 14px; border-left: 3px solid #3d4d24; background: #171b17;
-           color: #cfe8a8; font-size: 13.5px; margin: 0 0 18px; }
-.cfg-msg.bad { border-left-color: #6b3a2c; background: #1d1614; color: #f0a08a; }
+.cfg-msg { padding: 10px 14px; border-left: 3px solid var(--ok-line); background: var(--good-bg);
+           color: var(--save-text); font-size: 13.5px; margin: 0 0 18px; }
+.cfg-msg.bad { border-left-color: var(--bad-line); background: var(--bad-bg); color: var(--bad-text); }
 /* 【提示条要能关掉】（2026-09-23 运营者提）："保存好了"看过一眼就没用了，
    却一直占着表单顶上那块地方。 */
 .cfg-msg { position: relative; padding-right: 34px; }
@@ -367,12 +413,12 @@ body.app .topbar h1 { margin: 0; padding: 0; }
          cursor: pointer; padding: 2px 4px; }
 .msg-x:hover { opacity: 1; }
 .cfg-msg ul { margin: 6px 0 0; padding-left: 18px; }
-.counts { color: #8b93a1; font-size: 12.5px; margin-top: 7px; line-height: 1.8; }
-.counts b { color: #cdd3dc; font-weight: 600; }
-.counts .zero { color: #6b7280; }
-.try-out { margin-top: 8px; padding: 9px 12px; border-left: 3px solid #2f4a63;
-           background: #171b21; color: #cdd3dc; font-size: 13px; white-space: pre-wrap; }
-.try-out.bad { border-left-color: #6b3a2c; color: #f0a08a; }
+.counts { color: var(--muted); font-size: 12.5px; margin-top: 7px; line-height: 1.8; }
+.counts b { color: var(--text-2); font-weight: 600; }
+.counts .zero { color: var(--faint); }
+.try-out { margin-top: 8px; padding: 9px 12px; border-left: 3px solid var(--quote-line);
+           background: var(--quote-bg); color: var(--text-2); font-size: 13px; white-space: pre-wrap; }
+.try-out.bad { border-left-color: var(--bad-line); color: var(--bad-text); }
 """
 
 
@@ -455,12 +501,27 @@ def render(store, config, message=None, errors=None, active=None):
         on = " on" if section["key"] == active else ""
         side.append(f'<div class="src-item{on}" data-source="cfg-{section["key"]}">'
                     f'<div class="src-name">{_esc(section["label"])}</div></div>')
+        by_path = {spec["path"]: dict(spec, source=section.get("source"))
+                   for spec in section["fields"]}
         body = []
         if section["key"] == "ai":
+            body.append('<h3 class="block-title">今天用了多少</h3>')
             body.append(_render_usage(store, config))
-        for spec in section["fields"]:
-            spec = dict(spec, source=section.get("source"))
-            body.append(_render_field(config, spec, stats))
+        used = set()
+        for title, paths in GROUPS.get(section["key"], []):
+            cells = [_render_field(config, by_path[path], stats)
+                     for path in paths if path in by_path]
+            used.update(paths)
+            if cells:
+                body.append(f'<h3 class="block-title">{_esc(title)}</h3>'
+                            f'<div class="block">' + "".join(cells) + "</div>")
+        # 【没分到组的也要出现】：往 SECTIONS 里加字段却忘了写进 GROUPS 时，
+        # 它该露在最后一块里，而不是从页面上无声地消失。
+        rest = [_render_field(config, by_path[spec["path"]], stats)
+                for spec in section["fields"] if spec["path"] not in used]
+        if rest:
+            body.append('<h3 class="block-title">其它</h3>'
+                        '<div class="block">' + "".join(rest) + "</div>")
         panels.append(f'<section class="panel{on}" data-source="cfg-{section["key"]}">'
                       f'<h2>{_esc(section["label"])}</h2>' + "".join(body) + "</section>")
 
@@ -475,13 +536,14 @@ def render(store, config, message=None, errors=None, active=None):
         note = f'<div class="cfg-msg">{close}{_esc(message)}</div>'
 
     return f"""<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar 设置</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar 设置</title><script>/* 【在渲染之前就定好主题】：放到 body 里的话，页面会先闪一下深色再变浅，比不切换还难受。 */try{{document.documentElement.dataset.theme=localStorage.getItem("radar-theme")||"light";}}catch(e){{document.documentElement.dataset.theme="light";}}</script>
 <style>{radar.STYLE}{CONFIG_STYLE}</style></head>
 <body class="app">
 <form method="post" action="/config" id="cfg">
 <header class="topbar">
   <h1>设置</h1>
   <div class="cfg-actions">
+    <button type="button" class="act" id="theme">浅色</button>
     <button type="button" class="act" id="restore">恢复上一版</button>
     <button type="submit" class="cfg-save">保存</button>
   </div>
@@ -501,6 +563,23 @@ def render(store, config, message=None, errors=None, active=None):
 </div>
 </form>
 <script>
+
+// 【开关记在本机】：白天浅色晚上深色，是随手换的东西，不该每次重开都回到默认。
+(function () {{
+  const btn = document.getElementById("theme");
+  if (!btn) return;
+  const label = () => {{
+    btn.textContent = document.documentElement.dataset.theme === "light" ? "深色" : "浅色";
+  }};
+  label();
+  btn.addEventListener("click", () => {{
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try {{ localStorage.setItem("radar-theme", next); }} catch (e) {{}}
+    label();
+  }});
+}})();
+
 const items = [...document.querySelectorAll(".src-item[data-source]")];
 const panels = [...document.querySelectorAll(".panel")];
 items.forEach(item => item.addEventListener("click", () => {{

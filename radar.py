@@ -485,30 +485,76 @@ def pick(store, config, limit, use_ai=True):
 # --- 报告 --------------------------------------------------------------------
 
 STYLE = """
-:root { color-scheme: dark; }
-body { margin: 0; padding: 32px 28px 60px; background: #14161a; color: #e8eaed;
+/* 【颜色只在这里定义一次】：以前 62 处写死的色值散在两个文件里，想调一下对比度
+   就得逐处去改，改到一半必然漏掉几处。现在深浅两套各写一遍，其余地方全用变量。 */
+:root {
+  color-scheme: dark;
+  --bg: #14161a; --surface: #1a1d22; --sunken: #171a1f; --surface-2: #1e222a;
+  --chip: #232830; --border: #262a31; --border-strong: #2f3540; --border-hover: #46505f;
+  --text: #e8eaed; --text-2: #cdd3dc; --text-3: #aeb5c0; --muted: #8b93a1; --faint: #5a6472;
+  --ok: #8fd14f; --ok-line: #3d4d24; --mark-bg: #3d4d24; --mark-text: #dcf5a0;
+  --busy: #e8c35a; --busy-line: #4a4326; --busy-text: #e8d9a8;
+  --warn: #c96a4e; --warn-line: #4a2f26; --warn-text: #e8b0a0;
+  --bad-line: #6b3a2c; --bad-text: #f0a08a; --bad-bg: #1d1614; --good-bg: #171b17;
+  --save-bg: #1f2a15; --save-line: #3a4a26; --save-text: #cfe8a8;
+  --quote-line: #2f4a63; --quote-bg: #171b21;
+  --tag-forum-bg: #1f3346; --tag-forum-text: #9cc9f0;
+  --tag-reddit-bg: #46281f; --tag-reddit-text: #f0b79c;
+  --tag-bili-bg: #3d2233; --tag-bili-text: #f0a8d0;
+  --tag-yt-bg: #46201f; --tag-yt-text: #f09a9a;
+  --tag-ai-bg: #2a2440; --tag-ai-text: #c3b6f0;
+}
+
+/* 【浅色是默认】（2026-09-23 运营者说深色看着累）：这个工具是拿来读长段文字的
+   ——帖子正文、译文、答题要点——而不是盯几个数字的仪表盘。白天读长文，浅色底
+   更省眼睛；深色留着，晚上一键切回去。
+
+   【不用纯白纯黑】：#fff 配 #000 对比度过高，字会发"晕"，读久了更累。底用带一点
+   灰的白，字用接近墨色的深灰。 */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f7fa; --surface: #ffffff; --sunken: #f2f4f8; --surface-2: #eef2f8;
+  --chip: #eaeef4; --border: #e0e5ec; --border-strong: #cfd6e0; --border-hover: #aab4c2;
+  --text: #1c2128; --text-2: #39414d; --text-3: #4f5865; --muted: #6a7382; --faint: #98a1b0;
+  --ok: #4f9c1c; --ok-line: #8fbf5a; --mark-bg: #dcf2ad; --mark-text: #2d3d10;
+  --busy: #c68a12; --busy-line: #e0c27e; --busy-text: #7a5a10;
+  --warn: #c05a35; --warn-line: #e3b39f; --warn-text: #9b4526;
+  --bad-line: #c0553a; --bad-text: #9e3a1e; --bad-bg: #fdf1ed; --good-bg: #f1f8e9;
+  --save-bg: #edf7e1; --save-line: #a6cd78; --save-text: #33591a;
+  --quote-line: #7ba4cc; --quote-bg: #f1f6fc;
+  --tag-forum-bg: #e3eefb; --tag-forum-text: #1b4f80;
+  --tag-reddit-bg: #fde9e0; --tag-reddit-text: #8c3b19;
+  --tag-bili-bg: #fce5f1; --tag-bili-text: #8c2d60;
+  --tag-yt-bg: #fde4e4; --tag-yt-text: #8f2828;
+  --tag-ai-bg: #ece8fb; --tag-ai-text: #4a3a90;
+}
+body { margin: 0; padding: 32px 28px 60px; background: var(--bg); color: var(--text);
        font: 16px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
 /* 【标题后面那个数是"还等着你看的总数"】：三个源加起来，也就是今天还剩多少
    活儿，所以放在最显眼的地方；各源分别多少看左边。 */
-h1 { font-size: 22px; margin: 0 0 24px; }
-h1 .total { color: #8b93a1; font-weight: 400; }
-.meta { color: #8b93a1; font-size: 14px; margin-bottom: 28px; }
-.card { border: 1px solid #262a31; border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
-        background: #1a1d22; }
-.card a.title { color: #e8eaed; font-size: 17px; font-weight: 600; text-decoration: none; }
+h1 { font-size: 22px; margin: 0; }
+.topbar { flex: none; display: flex; align-items: center; gap: 16px;
+          padding: 26px 28px 20px; }
+.topbar .actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+h1 .total { color: var(--muted); font-weight: 400; }
+.meta { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+.card { border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
+        background: var(--surface); }
+.card a.title { color: var(--text); font-size: 17px; font-weight: 600; line-height: 1.5;
+                text-decoration: none; }
 .card a.title:hover { text-decoration: underline; }
-.tags { margin-top: 6px; font-size: 13px; color: #8b93a1; }
-.tag { display: inline-block; background: #232830; border-radius: 999px; padding: 2px 10px;
-       margin-right: 6px; color: #b9c0cc; }
-.hit { background: #2c3a20; color: #c7e88a; }
+.tags { margin-top: 6px; font-size: 13px; color: var(--muted); }
+.tag { display: inline-block; background: var(--chip); border-radius: 999px; padding: 2px 10px;
+       margin-right: 6px; color: var(--text-3); }
+.hit { background: var(--mark-bg); color: var(--mark-text); }
 /* 【来源用颜色分，不只是文字】：一眼扫过去要能分清这条是论坛的还是 Reddit 的，
    因为两边该用的语气和该给的答案深度不一样。 */
 .src { font-weight: 600; }
-.src-forum { background: #1f3346; color: #9cc9f0; }
-.src-reddit { background: #46281f; color: #f0b79c; }
-.src-bili { background: #3d2233; color: #f0a8d0; }
-.src-yt { background: #46201f; color: #f09a9a; }
-.ai { background: #2a2440; color: #c3b6f0; }
+.src-forum { background: var(--tag-forum-bg); color: var(--tag-forum-text); }
+.src-reddit { background: var(--tag-reddit-bg); color: var(--tag-reddit-text); }
+.src-bili { background: var(--tag-bili-bg); color: var(--tag-bili-text); }
+.src-yt { background: var(--tag-yt-bg); color: var(--tag-yt-text); }
+.ai { background: var(--tag-ai-bg); color: var(--tag-ai-text); }
 
 /* 【三个源常驻在左边，右边只放选中那个源的榜单】（2026-09-20 运营者定）：
    原来是 tab，不切过去就不知道那个源是什么情况——而"哪个源有东西、上次什么
@@ -531,7 +577,7 @@ h1 .total { color: #8b93a1; font-weight: 400; }
 html:has(body.app) { height: 100%; }
 body.app { height: 100vh; padding: 0; overflow: hidden;
            display: flex; flex-direction: column; }
-body.app h1 { flex: none; margin: 0; padding: 26px 28px 20px; }
+body.app h1 { flex: none; margin: 0; }
 body.app .wrap { flex: 1; min-height: 0; align-items: stretch; padding: 0 0 0 28px; }
 body.app .side, body.app .main { overflow-y: auto; overscroll-behavior: contain;
                                  padding-bottom: 32px; }
@@ -539,45 +585,47 @@ body.app .side { padding-right: 4px; }
 /* 固定高度的 flex 列里，子元素默认会被压扁去塞进高度，而不是溢出去滚动。 */
 body.app .side > * { flex: none; }
 body.app .main { max-width: none; padding-right: 28px; }
-body.app .main > * { max-width: 860px; }
+/* 【行宽有上限】：一行 90 多个字符，眼睛回行时容易串行。dashboard 那边正文
+   定在 38rem，这里放宽到 46rem——表单里有并排的说明和输入框，比纯正文需要多一点。 */
+body.app .main > * { max-width: 46rem; }
 /* 暗色底上系统默认那根白滚动条太扎眼。 */
-body.app .side, body.app .main { scrollbar-width: thin; scrollbar-color: #2f3540 transparent; }
+body.app .side, body.app .main { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 body.app .side::-webkit-scrollbar, body.app .main::-webkit-scrollbar { width: 8px; }
 body.app .side::-webkit-scrollbar-thumb, body.app .main::-webkit-scrollbar-thumb {
-  background: #2f3540; border-radius: 4px; }
-.src-item { border: 1px solid #262a31; border-radius: 12px; padding: 12px 14px;
-            background: #1a1d22; cursor: pointer; }
-.src-item:hover { border-color: #3a424e; }
+  background: var(--border-strong); border-radius: 4px; }
+.src-item { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+            background: var(--surface); cursor: pointer; }
+.src-item:hover { border-color: var(--border-hover); }
 /* 选中的那个用左边一道亮边，而不是整块变色：整块变色会和"正在扫"那个黄点抢
    注意力，而这两件事要能同时看清。 */
-.src-item.on { background: #1e222a; border-color: #46505f; box-shadow: inset 3px 0 0 #8fd14f; }
-.src-name { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: #cdd3dc; }
-.src-item .dot { width: 9px; height: 9px; border-radius: 50%; background: #5a6472; flex: none; }
-.src-item.done .dot { background: #8fd14f; }
-.src-item.busy .dot { background: #e8c35a; animation: pulse 1s infinite; }
-.src-item.cooling .dot { background: #c96a4e; }
-.src-when { color: #8b93a1; font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
-.src-when.hold { color: #e8b0a0; }
+.src-item.on { background: var(--surface-2); border-color: var(--border-hover); box-shadow: inset 3px 0 0 var(--ok); }
+.src-name { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--text-2); }
+.src-item .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
+.src-item.done .dot { background: var(--ok); }
+.src-item.busy .dot { background: var(--busy); animation: pulse 1s infinite; }
+.src-item.cooling .dot { background: var(--warn); }
+.src-when { color: var(--muted); font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
+.src-when.hold { color: var(--warn-text); }
 .idle-step { font-size: 12.5px; }
 /* 【设置放在侧栏最下面】：它是"偶尔来一次"的东西，不该和每天都点的扫描按钮
    抢位置，但也不能藏到找不着。 */
-.cfg-link { display: block; margin-top: 4px; padding: 8px 14px; color: #8b93a1;
+.cfg-link { display: block; margin-top: 4px; padding: 8px 14px; color: var(--muted);
             font-size: 13px; text-decoration: none; border: 1px solid transparent;
             border-radius: 12px; }
-.cfg-link:hover { color: #cdd3dc; border-color: #2f3540; }
-.badge { margin-left: auto; background: #2f3540; color: #cdd3dc; border-radius: 999px;
+.cfg-link:hover { color: var(--text-2); border-color: var(--border-strong); }
+.badge { margin-left: auto; background: var(--border-strong); color: var(--text-2); border-radius: 999px;
          font-size: 12px; padding: 1px 9px; }
-.src-item.on .badge { background: #3d4d24; color: #dcf5a0; }
-.badge.zero { background: transparent; color: #5a6472; }
-.src-item.on .badge.zero { background: transparent; color: #8b93a1; }
+.src-item.on .badge { background: var(--ok-line); color: var(--mark-text); }
+.badge.zero { background: transparent; color: var(--faint); }
+.src-item.on .badge.zero { background: transparent; color: var(--muted); }
 .panel { display: none; }
 .panel.on { display: block; }
 .src-btn { display: block; width: 100%; margin-top: 10px; cursor: pointer;
-           border: 1px solid #2f3540; border-radius: 8px; padding: 6px 10px;
-           background: #171a1f; color: #aeb5c0; font: inherit; font-size: 13px; }
-.src-btn:hover { border-color: #46505f; color: #cdd3dc; }
+           border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px;
+           background: var(--sunken); color: var(--text-3); font: inherit; font-size: 13px; }
+.src-btn:hover { border-color: var(--border-hover); color: var(--text-2); }
 .src-btn[disabled] { cursor: default; opacity: .45; }
-.src-btn.busy { color: #e8d9a8; border-color: #4a4326; animation: pulse 1s infinite; }
+.src-btn.busy { color: var(--busy-text); border-color: var(--busy-line); animation: pulse 1s infinite; }
 /* 窄窗口：侧栏放平成一排，别把正文挤成一条缝。 */
 @media (max-width: 880px) {
   body.app .wrap { padding: 0 16px; gap: 14px; }
@@ -589,57 +637,58 @@ body.app .side::-webkit-scrollbar-thumb, body.app .main::-webkit-scrollbar-thumb
   .src-item { flex: 1 1 200px; }
 }
 .src-btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
-           border: 1px solid #2f3540; border-radius: 999px; padding: 6px 14px;
-           background: #1a1d22; color: #aeb5c0; font: inherit; font-size: 13.5px; }
-.src-btn:hover { border-color: #46505f; }
+           border: 1px solid var(--border-strong); border-radius: 999px; padding: 6px 14px;
+           background: var(--surface); color: var(--text-3); font: inherit; font-size: 13.5px; }
+.src-btn:hover { border-color: var(--border-hover); }
 .src-btn[disabled] { cursor: default; opacity: .6; }
-.src-btn.busy { color: #e8d9a8; border-color: #4a4326; animation: pulse 1s infinite; }
+.src-btn.busy { color: var(--busy-text); border-color: var(--busy-line); animation: pulse 1s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
-.status { color: #8b93a1; font-size: 13.5px; }
-.err { color: #f0a08a; font-size: 13.5px; }
-h2 { font-size: 16px; margin: 0 0 14px; color: #cdd3dc; font-weight: 600; }
-h2 .count { color: #8b93a1; font-weight: 400; font-size: 13.5px; margin-left: 6px; }
-.snippet { margin-top: 10px; color: #aeb5c0; font-size: 14.5px; white-space: pre-wrap; }
-.snippet mark, .card a.title mark { background: #3d4d24; color: #dcf5a0; border-radius: 3px;
+.status { color: var(--muted); font-size: 13.5px; }
+.err { color: var(--bad-text); font-size: 13.5px; }
+h2 { font-size: 16px; margin: 0 0 14px; color: var(--text-2); font-weight: 600; }
+h2 .count { color: var(--muted); font-weight: 400; font-size: 13.5px; margin-left: 6px; }
+.snippet { margin-top: 10px; color: var(--text-2); font-size: 15px; line-height: 1.75;
+           white-space: pre-wrap; }
+.snippet mark, .card a.title mark { background: var(--ok-line); color: var(--mark-text); border-radius: 3px;
                                     padding: 0 2px; }
-.empty { color: #8b93a1; }
+.empty { color: var(--muted); }
 /* 【译文放在原文下面，而不是替换掉原文】：回复时要引用对方的原话（报错信息、
    按钮名），而且机器翻译偶尔会翻错，原文得在旁边能对照。 */
-.zh { margin-top: 10px; padding: 8px 12px; border-left: 3px solid #2f4a63;
-      background: #171b21; color: #cdd3dc; font-size: 14.5px; white-space: pre-wrap; }
+.zh { margin-top: 10px; padding: 8px 12px; border-left: 3px solid var(--quote-line);
+      background: var(--quote-bg); color: var(--text-2); font-size: 14.5px; white-space: pre-wrap; }
 /* 【处理按钮放在卡片右下角】：读完一条的动作是"看完 → 决定 → 下一条"，
    按钮跟在内容后面最顺手；放在标题旁边会和"打开原帖"抢注意力。
    【靠右】（2026-09-20 运营者定）：正文是左对齐的，按钮也贴左边的话，眼睛
    读到最后一行还要往回找；靠右则是读完自然落到的位置，而且一列按钮对齐，
    连着处理好几条时鼠标不用来回挪。 */
 .acts { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
-.act { cursor: pointer; border: 1px solid #2f3540; background: #1a1d22; color: #9aa3b0;
+.act { cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-3);
        border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 13px; }
-.act:hover { border-color: #46505f; color: #cdd3dc; }
-.act.done:hover { border-color: #3a5a26; color: #cfe8a8; }
+.act:hover { border-color: var(--border-hover); color: var(--text-2); }
+.act.done:hover { border-color: var(--save-line); color: var(--save-text); }
 .card.gone { opacity: .35; }
 /* 要点是给人抄材料用的，不是成品回复——用等宽字体和缩进把它和帖子正文分开，
    免得看着像"可以直接贴出去的东西"。 */
-.brief { margin-top: 12px; padding: 12px 14px; border-left: 3px solid #3d4d24;
-         background: #171a1f; color: #cdd3dc; font-size: 13.5px; line-height: 1.75;
+.brief { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--ok-line);
+         background: var(--sunken); color: var(--text-2); font-size: 13.5px; line-height: 1.75;
          white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; }
-.brief.error { border-left-color: #6b3a2c; color: #f0a08a; }
+.brief.error { border-left-color: var(--bad-line); color: var(--bad-text); }
 /* 【回复框】：中文写在上面，翻出来的贴在下面，两边都留着——发出去之前
    最后看一眼的是译文，但改的是中文那一段。 */
 .reply { margin-top: 12px; }
 .reply textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical;
-                  border: 1px solid #2f3540; border-radius: 8px; background: #171a1f;
-                  color: #e8eaed; font: inherit; font-size: 14px; padding: 10px 12px; }
-.reply textarea:focus { outline: none; border-color: #46505f; }
+                  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--sunken);
+                  color: var(--text); font: inherit; font-size: 14px; padding: 10px 12px; }
+.reply textarea:focus { outline: none; border-color: var(--border-hover); }
 .reply-bar { display: flex; gap: 8px; align-items: center; margin-top: 8px;
              justify-content: flex-end; }
-.reply-out { margin-top: 10px; padding: 12px 14px; border-left: 3px solid #2f4a63;
-             background: #171b21; color: #e8eaed; font-size: 14.5px; line-height: 1.7;
+.reply-out { margin-top: 10px; padding: 12px 14px; border-left: 3px solid var(--quote-line);
+             background: var(--quote-bg); color: var(--text); font-size: 14.5px; line-height: 1.7;
              white-space: pre-wrap; }
-.reply-out.error { border-left-color: #6b3a2c; color: #f0a08a; }
-.reply-hint { color: #8b93a1; font-size: 12.5px; margin-right: auto; }
-.note { margin-top: 36px; padding-top: 16px; border-top: 1px solid #262a31;
-        color: #8b93a1; font-size: 13.5px; }
+.reply-out.error { border-left-color: var(--bad-line); color: var(--bad-text); }
+.reply-hint { color: var(--muted); font-size: 12.5px; margin-right: auto; }
+.note { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--border);
+        color: var(--muted); font-size: 13.5px; }
 """
 
 
@@ -927,10 +976,13 @@ def render_page(store, config, status):
         err = (f'<p class="err">{html.escape(who)} · {when} 出错了：'
                f'{html.escape(status["error"])}</p>')
     return f"""<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar</title><script>/* 【在渲染之前就定好主题】：放到 body 里的话，页面会先闪一下深色再变浅，比不切换还难受。 */try{{document.documentElement.dataset.theme=localStorage.getItem("radar-theme")||"light";}}catch(e){{document.documentElement.dataset.theme="light";}}</script>
 <style>{STYLE}</style></head>
 <body class="app">
-<h1>值得看的帖子<span class="total">（{total}）</span></h1>
+<header class="topbar">
+  <h1>值得看的帖子<span class="total">（{total}）</span></h1>
+  <div class="actions"><button type="button" class="act" id="theme">浅色</button></div>
+</header>
 <div class="wrap">
   <aside class="side">{''.join(side)}{idle_step}
     <a class="cfg-link" href="/config">设置</a></aside>
@@ -943,6 +995,23 @@ def render_page(store, config, status):
   </main>
 </div>
 <script>
+
+// 【开关记在本机】：白天浅色晚上深色，是随手换的东西，不该每次重开都回到默认。
+(function () {{
+  const btn = document.getElementById("theme");
+  if (!btn) return;
+  const label = () => {{
+    btn.textContent = document.documentElement.dataset.theme === "light" ? "深色" : "浅色";
+  }};
+  label();
+  btn.addEventListener("click", () => {{
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try {{ localStorage.setItem("radar-theme", next); }} catch (e) {{}}
+    label();
+  }});
+}})();
+
 const step = document.getElementById("step");
 
 // 【记住停在哪个 tab】：扫完一轮要整页重画（榜单、按钮颜色、时间全都变了），
