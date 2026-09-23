@@ -86,6 +86,16 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
         def log_message(self, *args):
             pass  # 【不要把每个请求打进控制台】：那会把扫描进度冲掉。
 
+        def _redirect(self, where):
+            """【保存之后必须重定向】（POST/Redirect/GET）：直接把结果页当成
+            POST 的响应返回的话，地址栏停在一个 POST 上——人一刷新，浏览器就问
+            "要重发刚才提交的内容吗"，重发的还是旧表单（2026-09-23 运营者每次
+            刷新都撞上）。改成 303 之后，刷新只是重新 GET 一次页面。"""
+            self.send_response(303)
+            self.send_header("Location", where)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         def _send(self, body, content_type="text/html; charset=utf-8", code=200):
             data = body.encode("utf-8") if isinstance(body, str) else body
             self.send_response(code)
@@ -138,7 +148,7 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
                     # 就地换内容，所有拿着它的地方立刻看到新值，不用重启。
                     config.clear()
                     config.update(updated)
-                    self._send(configpage.render(store, config, message="保存好了。"))
+                    self._redirect("/config?saved=1")
                     return
 
                 if path == "/config/try":
@@ -186,7 +196,9 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
             elif parsed.path == "/config":
                 import configpage
 
-                self._send(configpage.render(store, config))
+                saved = urllib.parse.parse_qs(parsed.query).get("saved")
+                self._send(configpage.render(
+                    store, config, message="保存好了。" if saved else None))
             elif parsed.path == "/status":
                 self._send(json.dumps(state.snapshot()), "application/json")
             elif parsed.path == "/brief":

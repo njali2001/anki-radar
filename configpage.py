@@ -280,6 +280,7 @@ def apply_form(config, form):
     """
     updated = json.loads(json.dumps(config), object_pairs_hook=OrderedDict)
     errors = []
+    submitted = {p for p in (form.get("__fields") or "").split(",") if p}
     for section in SECTIONS:
         for spec in section["fields"]:
             path, kind = spec["path"], spec["kind"]
@@ -287,7 +288,15 @@ def apply_form(config, form):
             here = f"{section['label']} · {spec['label']}"
 
             if kind == "bool":
-                plant(updated, path, path in form)
+                # 【只处理这一版表单确实有的复选框】，理由见 render 里那段注释。
+                if path in submitted:
+                    plant(updated, path, path in form)
+                continue
+            if raw is None:
+                # 【表单里没有这一格，就别动它】：旧标签页重发上来的表单会缺
+                # 新加的字段，当成"填了个空"去校验，人看到的是一句莫名其妙的
+                # "要填一个整数"，而他什么都没填过（2026-09-23 运营者遇到）。
+                continue
             elif kind == "int":
                 text = (raw or "").strip()
                 if not text.lstrip("-").isdigit():
@@ -515,6 +524,12 @@ def render(store, config, message=None, errors=None, active=None):
     import radar
 
     stats = store.keyword_stats()
+    # 【表单要自报家门】：浏览器只提交勾上的复选框，没勾的压根不出现——所以
+    # 光看"表单里有没有这个键"分不清"没勾"和"这一版表单根本没有这个字段"。
+    # 页面在旧标签页里放了半天、代码又加了新字段时，后者就会发生：保存一下，
+    # 新字段被当成"没勾"悄悄写成 false。带上这份清单，保存时就只动清单里有的。
+    field_list = ",".join(spec["path"] for section in SECTIONS
+                          for spec in section["fields"])
     side, panels = [], []
     active = active or SECTIONS[0]["key"]
     for section in SECTIONS:
@@ -560,6 +575,7 @@ def render(store, config, message=None, errors=None, active=None):
 <style>{radar.STYLE}{CONFIG_STYLE}</style></head>
 <body class="app">
 <form method="post" action="/config" id="cfg">
+<input type="hidden" name="__fields" value="{field_list}">
 <header class="topbar">
   <h1>设置</h1>
   <div class="cfg-actions">
