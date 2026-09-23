@@ -91,47 +91,68 @@ LABELS = {"gemini": "Gemini", "groq": "Groq", "deepseek": "DeepSeek",
           "openai": "OpenAI", "youtube": "YouTube"}
 
 
+def _bar(used, total, label, note=""):
+    """一根条子该知道的全部：用了多少、满格多少、几成、什么颜色。
+
+    【阈值和 dashboard 一致】：<80 绿、80–90 橙、>=90 红。红是最后一档，
+    90 以上一律红——再往上没有更强的颜色可用了。
+    """
+    total = max(1, int(total or 1))
+    used = max(0, int(used or 0))
+    percent = min(100, round(used * 100 / total))
+    level = "ok" if percent < 80 else ("warn" if percent < 90 else "high")
+    return {"label": label, "used": used, "total": total,
+            "percent": percent, "level": level, "note": note}
+
+
 def summary(store, config):
-    """给页面用：每家一行，外加"这个数是怎么来的"。"""
+    """给页面用：每家一块，每块一到两根条子。
+
+    【条子必须有分母，而三家的分母来路不同】：Groq 的是它自己在响应头里给的；
+    YouTube 的是官方文档写死的 10000；Gemini 两样都没有——免费额度的上限没有
+    接口可查，所以用配置里那个"每天大约用多少次"当分母，标签上写明这是预算，
+    不是人家的上限。把自己设的预算说成官方额度，会让人在错的基础上决定
+    "还能不能再扫一轮"。
+    """
     rows = []
     ai_cfg = config.get("ai", {})
+    budget = int(ai_cfg.get("daily_request_budget") or 1000)
     for cfg, role in ((ai_cfg, "主用"), (ai_cfg.get("fallback") or {}, "备用")):
         if not cfg.get("api_key"):
             continue
         provider = provider_name(cfg)
         used = _get(store, provider)
         limits = _limits(store, provider)
-        parts = [f"今天 {used.get('calls', 0)} 次请求"]
-        if used.get("tokens"):
-            parts.append(f"{used['tokens']:,} token")
-        source = "我们自己数的"
-        if limits.get("x-ratelimit-remaining-requests"):
-            parts.append(
-                f"剩余 {limits['x-ratelimit-remaining-requests']}"
-                f"/{limits.get('x-ratelimit-limit-requests', '?')} 次请求")
-            if limits.get("x-ratelimit-remaining-tokens"):
-                parts.append(
-                    f"{limits['x-ratelimit-remaining-tokens']}"
-                    f"/{limits.get('x-ratelimit-limit-tokens', '?')} token")
-            when = limits.get("at")
-            ago = int(time.time()) - int(when or 0)
-            source = (f"剩余量是接口在 {ago // 60} 分钟前直接给的，"
-                      f"{limits.get('x-ratelimit-reset-requests', '')} 后重置")
-        rows.append({
-            "name": f"{LABELS.get(provider, provider)}（{role}·{cfg.get('model', '')}）",
-            "line": " · ".join(parts),
-            "source": source,
-        })
+        bars = []
+
+        remaining = limits.get("x-ratelimit-remaining-requests")
+        if remaining is not None:
+            # 【Groq：条子画的是"这一分钟的窗口"，不是今天】：它的限额按分钟
+            # 滚动，闲一会儿就自己满了。写清楚，免得看见满格以为今天没得用了。
+            limit = int(limits.get("x-ratelimit-limit-requests") or 1)
+            bars.append(_bar(limit - int(remaining), limit, "请求",
+                             f"剩 {remaining}/{limit}，"
+                             f"{limits.get('x-ratelimit-reset-requests', '')} 后回满"))
+            tok_left = limits.get("x-ratelimit-remaining-tokens")
+            if tok_left is not None:
+                tok_limit = int(limits.get("x-ratelimit-limit-tokens") or 1)
+                bars.append(_bar(tok_limit - int(tok_left), tok_limit, "token",
+                                 f"剩 {tok_left}/{tok_limit}，"
+                                 f"{limits.get('x-ratelimit-reset-tokens', '')} 后回满"))
+        else:
+            bars.append(_bar(used.get("calls", 0), budget, "请求",
+                             f"今天 {used.get('calls', 0)}/{budget} 次（预算，不是官方上限）"))
+
+        rows.append({"name": f"{LABELS.get(provider, provider)}（{role}·{cfg.get('model', '')}）",
+                     "bars": bars})
 
     tube = config.get("youtube", {})
     if tube.get("enabled") and tube.get("api_key"):
         used = _get(store, "youtube")
-        units = used.get("units", 0)
         rows.append({
             "name": "YouTube Data API",
-            "line": f"今天 {units} / {YOUTUBE_DAILY_UNITS} 单位"
-                    f"（{used.get('calls', 0)} 次调用）",
-            "source": "我们按官方单价自己算的：搜索 100 单位、读一个视频的评论 1 单位。"
-                      "额度每天太平洋时间零点重置。",
+            "bars": [_bar(used.get("units", 0), YOUTUBE_DAILY_UNITS, "配额",
+                          f"今天 {used.get('units', 0)}/{YOUTUBE_DAILY_UNITS} 单位，"
+                          f"太平洋时间零点重置")],
         })
     return rows

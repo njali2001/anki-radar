@@ -503,6 +503,7 @@ STYLE = """
   --tag-bili-bg: #3d2233; --tag-bili-text: #f0a8d0;
   --tag-yt-bg: #46201f; --tag-yt-text: #f09a9a;
   --tag-ai-bg: #2a2440; --tag-ai-text: #c3b6f0;
+  --bar-ok: #4f9c37; --bar-warn: #c2740b; --bar-high: #b3261e;
 }
 
 /* 【浅色是默认】（2026-09-23 运营者说深色看着累）：这个工具是拿来读长段文字的
@@ -527,6 +528,7 @@ STYLE = """
   --tag-bili-bg: #fce5f1; --tag-bili-text: #8c2d60;
   --tag-yt-bg: #fde4e4; --tag-yt-text: #8f2828;
   --tag-ai-bg: #ece8fb; --tag-ai-text: #4a3a90;
+  --bar-ok: #0a7d2b; --bar-warn: #c2740b; --bar-high: #b3261e;
 }
 body { margin: 0; padding: 32px 28px 60px; background: var(--bg); color: var(--text);
        font: 16px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }

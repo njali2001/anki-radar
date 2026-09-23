@@ -135,6 +135,9 @@ SECTIONS = [
                   "模型会下线：撞上 404 / model not found 就在这里换。"),
             field("ai.fallback.model", "备用模型", "text",
                   "主用限流或 503 时自动换它；写要点和翻译也走备用那家。"),
+            field("ai.daily_request_budget", "每天大约用多少次请求", "int",
+                  "只用来画进度条的分母。Gemini 的免费额度上限没有接口可查，"
+                  "所以这是你自己设的预算，不是官方数字。", min=1, max=100000),
             field("ai.min_score", "默认 AI 门槛（0–3）", "int",
                   "各个源可以自己覆盖这个值。", min=1, max=3),
             field("ai.candidates", "一轮最多给 AI 看几条", "int", min=1, max=200),
@@ -178,7 +181,8 @@ GROUPS = {
                    "youtube.min_interval_minutes", "youtube.pause_seconds"]),
     ],
     "ai": [
-        ("用哪个模型", ["ai.enabled", "ai.model", "ai.fallback.model"]),
+        ("用哪个模型", ["ai.enabled", "ai.model", "ai.fallback.model",
+                   "ai.daily_request_budget"]),
         ("筛得多严", ["ai.min_score", "ai.candidates", "ai.batch_size"]),
     ],
 }
@@ -372,10 +376,19 @@ body.app .topbar h1 { margin: 0; padding: 0; }
 .quota { margin: 0 0 26px; }
 .quota-row { border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
              padding: 11px 14px; margin-bottom: 8px; }
-.quota-row b { display: block; color: var(--text-2); font-size: 13.5px; font-weight: 600; }
-.quota-row span { display: block; color: var(--text); font-size: 14.5px; margin-top: 3px; }
-.quota-row em { display: block; color: var(--muted); font-size: 12px; font-style: normal;
-                margin-top: 4px; }
+.quota-row b { display: block; color: var(--text-2); font-size: 13.5px; font-weight: 600;
+               margin-bottom: 8px; }
+/* 条子照 dashboard 那套：一整条圆角轨道，用掉的部分着色，读数摆在条子外面
+   ——压在条子里的话，灰色越窄字越放不下，迟早读不出来。 */
+.bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.bar-label { flex: none; width: 3.2em; color: var(--muted); font-size: 12.5px; }
+.bar { flex: 1 1 auto; min-width: 4rem; height: 10px; border-radius: 999px;
+       overflow: hidden; background: var(--chip); }
+.bar-fill { height: 100%; border-radius: 999px; }
+.bar-fill.ok { background: var(--bar-ok); }
+.bar-fill.warn { background: var(--bar-warn); }
+.bar-fill.high { background: var(--bar-high); }
+.bar-caption { flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
 /* 【块】：边框 + 圆角 + 卡片底色，小标题在块外面。抄的是 dashboard 的
    .acct-title / .acct-card 那一对。 */
 .block { border: 1px solid var(--border); border-radius: 10px;
@@ -483,11 +496,18 @@ def _render_usage(store, config):
     rows = usage.summary(store, config)
     if not rows:
         return ""
-    cells = "".join(
-        f'<div class="quota-row"><b>{_esc(r["name"])}</b>'
-        f'<span>{_esc(r["line"])}</span>'
-        f'<em>{_esc(r["source"])}</em></div>' for r in rows)
-    return f'<div class="quota">{cells}</div>'
+    cells = []
+    for row in rows:
+        bars = "".join(
+            f'<div class="bar-row">'
+            f'<span class="bar-label">{_esc(b["label"])}</span>'
+            f'<div class="bar" role="img" aria-label="{_esc(b["label"])} '
+            f'{b["used"]}/{b["total"]}，{b["percent"]}%">'
+            f'<div class="bar-fill {b["level"]}" style="width:{b["percent"]}%"></div></div>'
+            f'<span class="bar-caption">{_esc(b["note"])}</span>'
+            f'</div>' for b in row["bars"])
+        cells.append(f'<div class="quota-row"><b>{_esc(row["name"])}</b>{bars}</div>')
+    return f'<div class="quota">{"".join(cells)}</div>'
 
 
 def render(store, config, message=None, errors=None, active=None):

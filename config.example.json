@@ -73,7 +73,9 @@
       "model": "openai/gpt-oss-120b",
       "api_key": ""
     },
-    "_brief": "页面上每条帖子的【写要点】按钮用的是 fallback 那家（Groq），没配 fallback 就用主用。要点只给材料，回复由人自己写。"
+    "_brief": "页面上每条帖子的【写要点】按钮用的是 fallback 那家（Groq），没配 fallback 就用主用。要点只给材料，回复由人自己写。",
+    "_daily_request_budget": "设置页那根进度条的分母。Gemini 的免费额度上限没有接口可查，所以这是自己设的预算，不是官方数字。",
+    "daily_request_budget": 1000
   },
   "bilibili": {
     "_说明": "B站：搜视频 + 抓评论。真正的抱怨在评论区，视频本身多半是教程。贴吧读不到（百度挡机房 IP），所以大陆这边先做 B站。",
