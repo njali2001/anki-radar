@@ -327,6 +327,12 @@ CONFIG_STYLE = """
    overflow-y:auto 等于没写，内容被 body 的 overflow:hidden 直接裁掉，鼠标怎么
    滚都不动（2026-09-23 运营者只看得到前两个字段）。 */
 body.app form { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 【保存和恢复钉在页头】（2026-09-23 运营者定）：右栏自己滚之后，长表单往下翻
+   几屏就看不见按钮了——而"改完要保存"这件事恰恰是翻到最底下才想起来的。 */
+.topbar { flex: none; display: flex; align-items: center; gap: 16px;
+          padding: 26px 28px 20px; }
+body.app .topbar h1 { margin: 0; padding: 0; }
+.cfg-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
 .cfg-field { margin: 0 0 22px; }
 .cfg-field label.name { display: block; color: #e8eaed; font-size: 14.5px; margin-bottom: 4px; }
 .cfg-hint { color: #8b93a1; font-size: 12.5px; line-height: 1.6; margin: 0 0 8px; }
@@ -436,24 +442,24 @@ def render(store, config, message=None, errors=None, active=None):
     elif message:
         note = f'<div class="cfg-msg">{_esc(message)}</div>'
 
-    busy = ""
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>anki-radar 设置</title>
 <style>{radar.STYLE}{CONFIG_STYLE}</style></head>
 <body class="app">
-<h1>设置</h1>
 <form method="post" action="/config" id="cfg">
+<header class="topbar">
+  <h1>设置</h1>
+  <div class="cfg-actions">
+    <button type="button" class="act" id="restore">恢复上一版</button>
+    <button type="submit" class="cfg-save">保存</button>
+  </div>
+</header>
 <div class="wrap">
   <aside class="side">{"".join(side)}
     <div class="src-item" style="cursor:pointer" onclick="location.href='/'">
       <div class="src-name">← 回榜单</div></div>
   </aside>
   <main class="main">
-    <div class="cfg-bar">
-      <span class="grow">改完点保存。保存前会整份校验，有一处不对就一处都不写。{busy}</span>
-      <button type="button" class="act" id="restore">恢复上一版</button>
-      <button type="submit" class="cfg-save">保存</button>
-    </div>
     {note}
     {"".join(panels)}
     <p class="note">更少见的选项（数据库路径、AI 的 provider 和 base_url）还在
@@ -499,7 +505,7 @@ document.querySelectorAll(".try-btn").forEach(btn => {{
       out.className = "try-out";
       let text = `库里 ${{data.total}} 条里会命中 ${{data.count}} 条。`;
       if (data.examples.length) {{
-        text += "\n" + data.examples.map(e => `  · [${{e.words.join(", ")}}] ${{e.text}}`).join("\n");
+        text += "\\n" + data.examples.map(e => `  · [${{e.words.join(", ")}}] ${{e.text}}`).join("\\n");
       }} else {{
         text += " 一条都没命中——要么写法不对，要么库里还没有这类内容。";
       }}
