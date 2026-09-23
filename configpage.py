@@ -129,8 +129,7 @@ SECTIONS = [
         "key": "ai",
         "label": "AI 与额度",
         "fields": [
-            field("ai.enabled", "用 AI 筛选", "bool",
-                  "关掉就只按关键词，噪音会多很多。"),
+            field("ai.enabled", "用 AI 筛选", "bool"),
             field("ai.model", "主用模型", "text",
                   "模型会下线：撞上 404 / model not found 就在这里换。"),
             field("ai.fallback.model", "备用模型", "text",
@@ -385,8 +384,8 @@ body.app .topbar h1 { margin: 0; padding: 0; }
 .quota { margin: 0 0 26px; }
 .quota-row { border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
              padding: 11px 14px; margin-bottom: 8px; }
-.quota-row b { display: block; color: var(--text-2); font-size: 13.5px; font-weight: 600;
-               margin-bottom: 8px; }
+.quota-row b { display: block; color: var(--text-2); font-size: 13.5px; font-weight: 600; }
+.quota-use { display: block; color: var(--muted); font-size: 12.5px; margin: 2px 0 9px; }
 /* 条子照 dashboard 那套：一整条圆角轨道，用掉的部分着色，读数摆在条子外面
    ——压在条子里的话，灰色越窄字越放不下，迟早读不出来。 */
 .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
@@ -545,7 +544,9 @@ def _render_usage(store, config):
             f'<div class="bar-fill {b["level"]}" style="width:{b["percent"]}%"></div></div>'
             f'<span class="bar-caption">{_esc(b["note"])}</span>'
             f'</div>' for b in row["bars"])
-        cells.append(f'<div class="quota-row"><b>{_esc(row["name"])}</b>{bars}</div>')
+        use = (f'<span class="quota-use">{_esc(row["use"])}</span>'
+               if row.get("use") else "")
+        cells.append(f'<div class="quota-row"><b>{_esc(row["name"])}</b>{use}{bars}</div>')
     return f'<div class="quota">{"".join(cells)}</div>'
 
 
@@ -570,7 +571,6 @@ def render(store, config, message=None, errors=None, active=None):
                    for spec in section["fields"]}
         body = []
         if section["key"] == "ai":
-            body.append('<h3 class="block-title">今天用了多少</h3>')
             body.append(_render_usage(store, config))
         used = set()
         for title, paths in GROUPS.get(section["key"], []):

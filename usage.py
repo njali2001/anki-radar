@@ -143,14 +143,22 @@ def summary(store, config):
             bars.append(_bar(used.get("calls", 0), budget, "请求",
                              f"今天 {used.get('calls', 0)}/{budget} 次（预算，不是官方上限）"))
 
-        rows.append({"name": f"{LABELS.get(provider, provider)}（{role}·{cfg.get('model', '')}）",
-                     "bars": bars})
+        # 【写清楚这家管哪些活】（2026-09-23 运营者提）：两家的分工不是对称的
+        # ——主用管每天都要跑的筛选和翻译，备用除了顶班，还独占"写要点"和
+        # "翻回复"这两件点一次跑一次的活。不写出来的话，看到一家限流了也
+        # 判断不出接下来哪个功能会受影响。
+        rows.append({
+            "name": f"{LABELS.get(provider, provider)}（{role}·{cfg.get('model', '')}）",
+            "use": ("筛帖子 · 翻译评论。挂了或限流时自动换备用。" if role == "主用"
+                    else "写要点 · 把你的中文回复翻成对方的语言。主用挂了时还要顶上筛帖子和翻译。"),
+            "bars": bars})
 
     tube = config.get("youtube", {})
     if tube.get("enabled") and tube.get("api_key"):
         used = _get(store, "youtube")
         rows.append({
             "name": "YouTube Data API",
+            "use": "搜教程视频 · 读它们下面的评论。",
             "bars": [_bar(used.get("units", 0), YOUTUBE_DAILY_UNITS, "配额",
                           f"今天 {used.get('units', 0)}/{YOUTUBE_DAILY_UNITS} 单位，"
                           f"太平洋时间零点重置")],
