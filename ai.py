@@ -278,6 +278,55 @@ def translate(rows, cfg):
     return results
 
 
+# --- 把中文回复翻成对方的语言 --------------------------------------------------
+
+REPLY_PROMPT = """A person is replying to the comment below. He wrote his reply
+in Chinese. Put his reply into the same language the original comment is written
+in, so he can post it there.
+
+This is translation, not writing. Rules:
+- Say exactly what he said: nothing added, nothing dropped, nothing polished
+  into marketing language.
+- Keep his register: a helpful person answering on a forum, first person, plain
+  words, no greetings or sign-offs he did not write.
+- Product names, error messages, menu items and URLs stay exactly as they are.
+- Output the reply text only. No quotes around it, no notes, no alternatives.
+
+The original comment he is replying to:
+{original}
+
+His reply, in Chinese:
+{reply}
+"""
+
+
+def reply_in_their_language(row, chinese, cfg):
+    """把运营者用中文写的回复，翻成原帖所用的那门语言。
+
+    【目标语言不用人来指定】：模型看得见原帖，葡语、西语还是英语由它照着原文
+    定。少一个下拉框，也少一次"选错了没发现"。
+
+    【和写要点一样用备用那家】：这是点一次跑一次的小活，别去挤打分的额度。
+    """
+    text = (chinese or "").strip()
+    if not text:
+        raise AIError("先写点什么再翻")
+
+    settings = dict(cfg.get("fallback") or {})
+    if not settings.get("api_key"):
+        settings = dict(cfg)
+    settings.pop("fallback", None)
+    if not settings.get("api_key"):
+        raise AIError("config.json 里没有可用的 api_key")
+
+    original = "\n".join(
+        x for x in ((row.get("title") or "").strip(), (row.get("body") or "").strip()[:800]) if x
+    )
+    prompt = REPLY_PROMPT.format(original=original, reply=text[:3000])
+    # 【不要 JSON】：要的是可以直接粘出去的一段话。
+    return _ask(prompt, settings, want_json=False).strip()
+
+
 # --- 答题要点 ----------------------------------------------------------------
 
 BRIEF_PROMPT = """You are helping someone answer one forum post about Anki.

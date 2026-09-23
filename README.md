@@ -96,6 +96,14 @@ what to check first, what not to claim — and not for a finished reply. The rep
 is written by a person, in their own words. Generating it costs a request, so it
 happens when you click, not for every card.
 
+**回复** opens a box to write that reply in Chinese and puts it into whatever
+language the original comment used — the model reads the original to decide,
+so there is no language to pick. This is translation, not ghostwriting: the
+words and the judgement stay the author's, and product names, error messages and
+menu labels are kept verbatim so they can be quoted back. Foreign-language items
+are also translated into Chinese under the original when they are scored, so the
+whole loop — read, decide, answer — works in a language the author reads.
+
 One-off runs without the page:
 
     python radar.py --forum-only --no-open   scan the forum, write report.html

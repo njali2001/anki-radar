@@ -95,6 +95,26 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
             self.end_headers()
             self.wfile.write(data)
 
+        def do_POST(self):
+            """【回复要用 POST】：一段中文回复几百上千字，塞进查询串会被网址
+            长度卡住，而且回复内容会被打进任何一层访问日志里。"""
+            try:
+                if urllib.parse.urlparse(self.path).path != "/reply":
+                    self._send("not found", "text/plain; charset=utf-8", 404)
+                    return
+                length = int(self.headers.get("Content-Length") or 0)
+                payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                row = store.get((payload.get("id") or "").strip())
+                if not row:
+                    self._send(json.dumps({"error": "没有这一条"}), "application/json", 404)
+                    return
+                import ai
+
+                text = ai.reply_in_their_language(row, payload.get("text") or "", config.get("ai", {}))
+                self._send(json.dumps({"text": text}), "application/json")
+            except Exception as exc:  # noqa: BLE001
+                self._send(json.dumps({"error": str(exc)[:300]}), "application/json", 502)
+
         def do_GET(self):
             # 【出错要看得见】：默认情况下处理函数里抛异常，浏览器只会看到
             # "连接被重置"，而控制台上什么都没有——查起来无从下手。

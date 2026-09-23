@@ -614,6 +614,20 @@ h2 .count { color: #8b93a1; font-weight: 400; font-size: 13.5px; margin-left: 6p
          background: #171a1f; color: #cdd3dc; font-size: 13.5px; line-height: 1.75;
          white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; }
 .brief.error { border-left-color: #6b3a2c; color: #f0a08a; }
+/* 【回复框】：中文写在上面，翻出来的贴在下面，两边都留着——发出去之前
+   最后看一眼的是译文，但改的是中文那一段。 */
+.reply { margin-top: 12px; }
+.reply textarea { width: 100%; box-sizing: border-box; min-height: 88px; resize: vertical;
+                  border: 1px solid #2f3540; border-radius: 8px; background: #171a1f;
+                  color: #e8eaed; font: inherit; font-size: 14px; padding: 10px 12px; }
+.reply textarea:focus { outline: none; border-color: #46505f; }
+.reply-bar { display: flex; gap: 8px; align-items: center; margin-top: 8px;
+             justify-content: flex-end; }
+.reply-out { margin-top: 10px; padding: 12px 14px; border-left: 3px solid #2f4a63;
+             background: #171b21; color: #e8eaed; font-size: 14.5px; line-height: 1.7;
+             white-space: pre-wrap; }
+.reply-out.error { border-left-color: #6b3a2c; color: #f0a08a; }
+.reply-hint { color: #8b93a1; font-size: 12.5px; margin-right: auto; }
 .note { margin-top: 36px; padding-top: 16px; border-top: 1px solid #262a31;
         color: #8b93a1; font-size: 13.5px; }
 """
@@ -733,6 +747,7 @@ def cards_for(rows):
     {f'<div class="zh">{html.escape(row["translation"])}</div>' if row.get("translation") else ""}
     <div class="acts" data-id="{html.escape(row['external_id'])}">
       <button class="act brief-btn">写要点</button>
+      <button class="act reply-btn">回复</button>
       <button class="act done" data-value="done">已处理</button>
       <button class="act" data-value="ignored">忽略</button>
     </div>
@@ -983,6 +998,80 @@ document.querySelectorAll(".brief-btn").forEach(btn => {{
       box.textContent = "生成失败：连不上本地服务，刷新页面试试";
     }}
     btn.disabled = false;
+  }});
+}});
+
+// 【回复：中文写，AI 翻成对方的语言】（2026-09-23 运营者定）：巴西那边的人
+// 多半不读英文，而他不会写葡语。翻的是他自己写的话，不是让模型替他写——
+// 内容还是他的，只是换了一门语言。目标语言由模型照着原帖定，不用他选。
+document.querySelectorAll(".reply-btn").forEach(btn => {{
+  btn.addEventListener("click", () => {{
+    const acts = btn.closest(".acts");
+    const card = acts.closest(".card");
+    let box = card.querySelector(".reply");
+    if (box) {{ box.querySelector("textarea").focus(); return; }}
+
+    box = document.createElement("div");
+    box.className = "reply";
+    box.innerHTML = '<textarea placeholder="用中文写你要回复的话，写完点右边翻成对方的语言"></textarea>'
+                  + '<div class="reply-bar"><span class="reply-hint"></span>'
+                  + '<button class="act go">翻成对方的语言</button>'
+                  + '<button class="act copy" hidden>复制</button></div>';
+    card.appendChild(box);
+    const area = box.querySelector("textarea");
+    const hint = box.querySelector(".reply-hint");
+    const go = box.querySelector(".go");
+    const copy = box.querySelector(".copy");
+    area.focus();
+
+    go.addEventListener("click", async () => {{
+      const text = area.value.trim();
+      if (!text) {{ hint.textContent = "先写点什么"; return; }}
+      go.disabled = true;
+      hint.textContent = "翻译中…";
+      let out = box.querySelector(".reply-out");
+      if (!out) {{ out = document.createElement("div"); out.className = "reply-out"; box.appendChild(out); }}
+      try {{
+        const res = await fetch("/reply", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify({{ id: acts.dataset.id, text: text }})
+        }});
+        const data = await res.json();
+        if (data.text) {{
+          out.className = "reply-out";
+          out.textContent = data.text;
+          copy.hidden = false;
+          hint.textContent = "发出去之前自己再读一遍";
+        }} else {{
+          out.className = "reply-out error";
+          out.textContent = "翻译失败：" + (data.error || "未知原因");
+          hint.textContent = "";
+        }}
+      }} catch (e) {{
+        out.className = "reply-out error";
+        out.textContent = "翻译失败：连不上本地服务，刷新页面试试";
+        hint.textContent = "";
+      }}
+      go.disabled = false;
+    }});
+
+    copy.addEventListener("click", async () => {{
+      const out = box.querySelector(".reply-out");
+      if (!out) return;
+      try {{
+        await navigator.clipboard.writeText(out.textContent);
+        hint.textContent = "已复制，去原帖粘贴";
+      }} catch (e) {{
+        // 【剪贴板可能被拒】：http 页面在某些浏览器里没有这个权限。
+        const range = document.createRange();
+        range.selectNodeContents(out);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        hint.textContent = "已选中，按 Ctrl+C 复制";
+      }}
+    }});
   }});
 }});
 
