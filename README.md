@@ -70,8 +70,23 @@ Typical volume: a handful of posts per day. This is a reading list, not a feed.
 
 ## Running it
 
+    setup-runtime.bat            once: fetch a private Python (Windows, ~10 MB)
     run.bat                      open the local page          (Windows)
     python radar.py --serve      same thing                   (any OS)
+
+`setup-runtime.bat` downloads the official embeddable Python into `runtime\` and
+verifies it (standard library, HTTPS certificate chain, and every module of this
+project). After that the folder is self-contained: copy it to any Windows machine
+and `run.bat` works with nothing installed. `run.bat` prefers that runtime and
+falls back to an installed Python if it is absent, so an existing setup keeps
+working. Nothing here needs a third-party package — every import is standard
+library, which is what makes a bundled runtime this easy.
+
+Data (`config.json`, `config.bak.json`, `radar.sqlite3`, `report.html`) is read
+and written next to the code by default. `RADAR_DATA_DIR` moves all of it
+somewhere else — the case that matters is a server or container, where the code
+lives in an image and the data on a mounted volume. See `paths.py`; that file is
+the only place allowed to decide where anything lives.
 
 The page runs on 127.0.0.1. The left column lists the sources — each with how
 many items are waiting, when it was last scanned, whether it can be scanned right
@@ -193,8 +208,11 @@ rate. If API access is granted, swapping the source is a small change — but th
     ai.py               optional relevance scoring (Gemini / OpenAI-compatible)
     ui.py               the local page: one button per source, no external access
     store.py            SQLite storage, de-duplication, your done/ignore marks
+    paths.py            where code ends and data begins — the only authority
     sample_posts.json   offline sample data for --sample
     config.example.json copy to config.json (which is gitignored)
+    setup-runtime.bat   fetch + verify the bundled Python (Windows, run once)
+    tools/              helpers for that: patch the ._pth, then prove it works
 
 Code comments are in Chinese — this started as a personal tool. The README,
 the CLI help and the configuration file are in English.

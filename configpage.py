@@ -21,9 +21,10 @@ import shutil
 import urllib.parse
 from collections import OrderedDict
 
-HERE = pathlib.Path(__file__).resolve().parent
-CONFIG_PATH = HERE / "config.json"
-BACKUP_PATH = HERE / "config.bak.json"
+# 【路径统一由 paths.py 决定】，见那个文件顶上的说明。这里原来自己算
+# Path(__file__).parent，和 radar.py 重复了一遍。
+from paths import CONFIG as CONFIG_PATH
+from paths import CONFIG_BACKUP as BACKUP_PATH
 
 
 # --- 哪些字段可以在页面上改 ----------------------------------------------------

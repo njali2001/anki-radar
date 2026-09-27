@@ -22,14 +22,15 @@ from pathlib import Path
 
 import ai
 import sources
+import paths
 import usage
 import ui
 from store import Store
 
-HERE = Path(__file__).resolve().parent
-CONFIG = HERE / "config.json"
-EXAMPLE = HERE / "config.example.json"
-REPORT = HERE / "report.html"
+# 【路径只有 paths.py 说得上算】。这里原来自己算 Path(__file__).parent，
+# configpage.py 也自己算了一遍——两处一旦不一致，配置页写进 A、这里读 B，
+# 页面照样说"保存好了"而设置没生效，且没有任何报错。
+from paths import CONFIG, DATA_DIR, EXAMPLE, REPORT, SAMPLE_POSTS
 
 
 def load_config():
@@ -43,7 +44,7 @@ def load_config():
 
 
 def pattern_for(keyword):
-    """整词匹配、大小写不敏感。
+    r"""整词匹配、大小写不敏感。
 
     【要整词】：`anki sync` 不整词会命中一堆 URL 里的片段；而 `AnkiWeb` 这种
     本来就没歧义的词，整词与否结果一样。统一整词最省心。
@@ -75,7 +76,7 @@ def collect(config, use_sample, only=None, progress=None):
     而其它源的结果照样有用。坏掉的那条打印出来，别静悄悄地少一半。
     """
     if use_sample:
-        items = json.loads((HERE / "sample_posts.json").read_text(encoding="utf-8"))
+        items = json.loads(SAMPLE_POSTS.read_text(encoding="utf-8"))
         # 样例里的时间戳写的是"几小时前"，这样每次跑起来都像是刚发的。
         now = int(time.time())
         for item in items:
@@ -1244,7 +1245,7 @@ def main():
     database = config.get("database", "radar.sqlite3")
     if args.sample:
         database = "radar-sample.sqlite3"
-    store = Store(HERE / database)
+    store = Store(paths.database(database))
 
     # 【把报账的钩子接到 store 上】：ai.py 只管问模型，不认识库；这里把两者接起来，
     # 于是"今天用了多少"在命令行跑和网页版跑都会被记下来，不会只算一半。

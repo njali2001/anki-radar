@@ -6,3 +6,4 @@ __pycache__/
 radar-sample.sqlite3
 config.bak.json
 config.json.tmp
+runtime/
