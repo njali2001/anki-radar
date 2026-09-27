@@ -60,7 +60,13 @@ class Store:
         self.db.close()
 
     def add(self, item, matched, now):
-        """写一行。之前见过就返回 False。"""
+        """写一行。之前见过就返回 False。
+
+        【"见过"只按 external_id 算，一稿多投照样是多行】（2026-09-27 运营者定）。
+        同一个人把同一篇贴到七八个版块，在榜单上就会出现七八条——这是有意的：
+        按标题折叠固然干净，但两个人真的发了同名帖时会少看到一条，而看漏一个
+        正卡着的人，比多划过几行重复的代价大。
+        """
         with self.lock:
             cursor = self.db.execute(
                 """INSERT OR IGNORE INTO posts
