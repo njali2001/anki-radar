@@ -781,7 +781,52 @@ def ago(seconds):
     return f"{hours // 24} 天前"
 
 
-def cards_for(rows):
+QUERY_NOISE = {"or", "and", "not"}
+
+
+def terms_of(query):
+    """把一条搜索语句拆成"值得亮出来的词"。
+
+    `anki ("too large" OR "size limit")` → `['too large', 'size limit', 'anki']`
+    引号里的整体算一个词，布尔算子扔掉。
+    """
+    phrases = re.findall(r'"([^"]+)"', query)
+    rest = re.sub(r'"[^"]*"', " ", query)
+    words = [w for w in re.findall(r"[^\s()]+", rest) if w.lower() not in QUERY_NOISE]
+    return phrases + words
+
+
+def highlight_terms(hits, config):
+    """卡片上真正要亮的词——不一定就是标签上那几个字。
+
+    【标签不等于命中词】（2026-09-27 发现）：Reddit 全站搜索记下的"命中词"是
+    config 里 searches 的 **label**，那是给人看的分类名（"同步"）；而真正让
+    Reddit 返回这条帖子的是 query 里的 sync / ankiweb / syncing。拿 label 去一篇
+    英文帖子里找，一个字也亮不了——看上去就像**高亮功能没了**，而实际上高亮做得
+    完全正确，是我们递给它的词从一开始就不在正文里。
+
+    所以这里只在渲染时把 label 展开成 query 里的词。标签仍然显示"同步"（可读），
+    高亮用真实的词。**不动库**：已经存进去的旧卡片也跟着一起修好，不用重扫。
+
+    订阅版块那条路记的本来就是真关键词，原样返回。
+    """
+    if not config:
+        return hits
+    mapping = {
+        entry.get("label"): terms_of(entry.get("query", ""))
+        for entry in config.get("reddit_rss", {}).get("searches", [])
+        if entry.get("label")
+    }
+    if not mapping:
+        return hits
+    terms = []
+    for hit in hits:
+        terms.extend(mapping.get(hit, [hit]))
+    # 去重但保持顺序：同一个词亮两遍没意义，而顺序影响 highlight 里的长词优先。
+    return list(dict.fromkeys(terms))
+
+
+def cards_for(rows, config=None):
     cards = []
     for row in rows:
         # 【没有标题的（B站 评论就没有）用正文开头当标题，但别把同一句话再抄一遍】：
@@ -790,13 +835,14 @@ def cards_for(rows):
         title = row["title"] or (body[:90] + "…" if len(body) > 90 else body)
         snippet = "" if (not row["title"] and len(body) <= 90) else body[:400]
         hits = [k for k in row["matched"].split(",") if k.strip()]
+        marks = highlight_terms(hits, config)
         tags = "".join(
             f'<span class="tag hit">{html.escape(k)}</span>'
             for k in row["matched"].split(",") if k
         )
         cards.append(f"""
   <div class="card">
-    <a class="title" href="{html.escape(row['permalink'])}" target="_blank" rel="noopener">{highlight(title, hits)}</a>
+    <a class="title" href="{html.escape(row['permalink'])}" target="_blank" rel="noopener">{highlight(title, marks)}</a>
     <div class="tags">
       {source_tag(row)}
       <span class="tag">{html.escape(where(row))}</span>
@@ -805,7 +851,7 @@ def cards_for(rows):
       {tags}
       {score_tag(row)}
     </div>
-    {f'<div class="snippet">{highlight(snippet, hits)}</div>' if snippet else ""}
+    {f'<div class="snippet">{highlight(snippet, marks)}</div>' if snippet else ""}
     {f'<div class="zh">{html.escape(row["translation"])}</div>' if row.get("translation") else ""}
     <div class="acts" data-id="{html.escape(row['external_id'])}">
       <button class="act brief-btn">写要点</button>
@@ -818,8 +864,8 @@ def cards_for(rows):
     return "\n".join(cards) if cards else ""
 
 
-def render(rows, sample):
-    body = cards_for(rows) or '<p class="empty">这一轮没有新的。</p>'
+def render(rows, sample, config=None):
+    body = cards_for(rows, config) or '<p class="empty">这一轮没有新的。</p>'
     banner = '<p class="meta">⚠ 这是离线样例数据，不是真实的 Reddit 内容。</p>' if sample else ""
     stamp = time.strftime("%Y-%m-%d %H:%M")
     return f"""<!doctype html>
@@ -961,7 +1007,7 @@ def render_page(store, config, status):
         panels.append(
             f'<section class="panel" data-source="{source}">'
             f'<h2>{label}<span class="count">这一轮 {len(rows)} 条{more}</span></h2>'
-            + (cards_for(rows) or '<p class="empty">这一轮没有值得看的。</p>')
+            + (cards_for(rows, config) or '<p class="empty">这一轮没有值得看的。</p>')
             + '</section>'
         )
 
@@ -1207,8 +1253,8 @@ if ({ 'true' if status.get('busy') else 'false' }) poll();
 """
 
 
-def write_report(rows, sample, open_browser):
-    REPORT.write_text(render(rows, sample), encoding="utf-8")
+def write_report(rows, sample, open_browser, config=None):
+    REPORT.write_text(render(rows, sample, config), encoding="utf-8")
     print(f"报告：{REPORT}")
     if open_browser:
         webbrowser.open(REPORT.as_uri())
@@ -1292,7 +1338,7 @@ def main():
             return
 
         if args.again:
-            write_report(store.last_report(limit), args.sample, not args.no_open)
+            write_report(store.last_report(limit), args.sample, not args.no_open, config)
             return
 
         print("扫描中…" + ("（离线样例）" if args.sample else ""), flush=True)
@@ -1302,7 +1348,7 @@ def main():
         rows, dropped = pick(store, config, limit, use_ai=not args.no_ai)
         if dropped:
             print(f"AI 判定不相关，跳过 {dropped} 条")
-        write_report(rows, args.sample, not args.no_open)
+        write_report(rows, args.sample, not args.no_open, config)
     finally:
         store.close()
 
