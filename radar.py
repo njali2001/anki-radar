@@ -23,6 +23,7 @@ from pathlib import Path
 import ai
 import sources
 import paths
+import watch
 import usage
 import ui
 from store import Store
@@ -610,6 +611,21 @@ body.app .side::-webkit-scrollbar-thumb, body.app .main::-webkit-scrollbar-thumb
 .src-when { color: var(--muted); font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
 .src-when.hold { color: var(--warn-text); }
 .idle-step { font-size: 12.5px; }
+/* 【盯官方口径的那一块】（watch.py）：它不是一个"源"，不该长成可以点"扫一遍"
+   的卡片；但它又必须天天在眼前，因为首页那句 250 MB 全靠它。所以做成侧栏底部
+   一小条，平时灰的，变了才亮。 */
+.watch { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+         font-size: 12.5px; color: var(--muted); }
+.watch-head { color: var(--text-2); font-size: 13px; font-weight: 600;
+              display: flex; align-items: center; gap: 6px; }
+.watch-line { display: block; margin-top: 4px; color: var(--text); font-size: 13.5px;
+              text-decoration: none; font-variant-numeric: tabular-nums; }
+.watch-line:hover { text-decoration: underline; }
+.watch-when { margin-top: 4px; line-height: 1.5; }
+.watch-note { margin-top: 6px; line-height: 1.55; color: var(--warn-text); }
+.watch.hot { border-color: var(--warn-text); }
+.watch.hot .watch-head { color: var(--warn-text); }
+
 /* 【设置放在侧栏最下面】：它是"偶尔来一次"的东西，不该和每天都点的扫描按钮
    抢位置，但也不能藏到找不着。 */
 .cfg-link { display: block; margin-top: 4px; padding: 8px 14px; color: var(--muted);
@@ -952,6 +968,47 @@ def check_ai(config):
             print(f"    {ident} {value}/3 {mark}  {reason}")
 
 
+def watch_html(store, config):
+    """侧栏底部那一小块：官方页面上的数字现在是多少，上次什么时候核对的。
+
+    【没变的时候要安静】：这东西一年里大概有 364 天是"没变"，天天喊一次，
+    第 365 天真变了那次也就没人看了。所以平时是灰字，变了才描边变色。
+    """
+    if not config.get("watch", {}).get("enabled", True):
+        return ""
+
+    blocks = []
+    for item in watch.status(store):
+        if watch.busy():
+            # 【正在取的时候就说正在取】：这时候显示"3 天前核对过"是在说谎——
+            # 刷新一下就会变，而人会以为自己看到的是最新结果。
+            when = "正在核对…"
+        elif not item["checked_at"]:
+            when = "还没核对过"
+        else:
+            when = f"{ago(item['checked_at'])}核对过"
+
+        note, css = "", ""
+        if item["changed_at"] and item["note"]:
+            fresh = time.time() - item["changed_at"] < 14 * 86400
+            css = " hot" if fresh else ""
+            stamp = time.strftime("%m-%d", time.localtime(item["changed_at"]))
+            note = (f'<div class="watch-note">{stamp} 变过：'
+                    f'{html.escape(item["note"])[:200]}</div>')
+        elif item["checked_at"]:
+            when += " · 没变"
+
+        blocks.append(
+            f'<div class="watch{css}">'
+            f'<div class="watch-head">官方口径</div>'
+            f'<a class="watch-line" href="{html.escape(item["url"])}" target="_blank" '
+            f'rel="noopener">{html.escape(item["label"])} {html.escape(item["headline"])}</a>'
+            f'<div class="watch-when">{when}</div>'
+            f'{note}</div>'
+        )
+    return "".join(blocks)
+
+
 def render_page(store, config, status):
     """网页版的整页：左边一列源，右边选中那个源的榜单。"""
     limit = config.get("daily_limit", 5)
@@ -1018,6 +1075,11 @@ def render_page(store, config, status):
     # 要往里写字。
     idle_step = "" if status.get("busy") else '<p class="status idle-step" id="step"></p>'
 
+    # 【页面一刷新就顺手看一眼官方口径】：过期了才真去取，而且在后台取，
+    # 不让这一项拖慢整页（见 watch.refresh_if_stale）。
+    watch.refresh_if_stale(store, config)
+    watch_block = watch_html(store, config)
+
     err = ""
     if status.get("error"):
         who = SOURCE_LABELS.get(status.get("error_source"), ("", ""))[0]
@@ -1033,7 +1095,7 @@ def render_page(store, config, status):
   <div class="actions"><button type="button" class="act" id="theme">浅色</button></div>
 </header>
 <div class="wrap">
-  <aside class="side">{''.join(side)}{idle_step}
+  <aside class="side">{''.join(side)}{idle_step}{watch_block}
     <a class="cfg-link" href="/config">设置</a></aside>
   <main class="main">{err}{''.join(panels)}
 <p class="note">

@@ -154,5 +154,11 @@
     "pause_seconds": 2,
     "_translate": "打完分之后，把留下来的非中文、非英文评论翻成中文，显示在原文下面。中文和英文不翻。",
     "translate": true
+  },
+  "watch": {
+    "_说明": "盯着几个官方页面上的数字（见 watch.py）。首页那句 250 MB 全靠它——那个数字变了不会有人通知你，官网照常打开，只有你的文案在替一个过时的事实做广告。",
+    "enabled": true,
+    "_min_interval_minutes": "两次真去取之间至少隔这么久。页面刷新得再勤也不会多发请求。",
+    "min_interval_minutes": 720
   }
 }

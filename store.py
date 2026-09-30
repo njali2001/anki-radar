@@ -32,6 +32,16 @@ CREATE TABLE IF NOT EXISTS posts (
 );
 CREATE INDEX IF NOT EXISTS posts_reported ON posts (reported_at);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+-- 【盯着别人页面上的数字】：见 watch.py。存的是"上一次看到的样子"，
+-- 下一次核对拿它来比。text 整篇留着，是为了能说出"改的是哪一句"。
+CREATE TABLE IF NOT EXISTS watch (
+    key        TEXT PRIMARY KEY,
+    values_json TEXT NOT NULL DEFAULT '{}',
+    text       TEXT NOT NULL DEFAULT '',
+    checked_at INTEGER NOT NULL DEFAULT 0,
+    changed_at INTEGER,
+    note       TEXT NOT NULL DEFAULT ''
+);
 CREATE INDEX IF NOT EXISTS posts_posted   ON posts (posted_at DESC);
 """
 
@@ -58,6 +68,27 @@ class Store:
 
     def close(self):
         self.db.close()
+
+    # --- 盯页面（watch.py 用）-------------------------------------------
+    def get_watch(self, key):
+        with self.lock:
+            row = self.db.execute("SELECT * FROM watch WHERE key = ?", (key,)).fetchone()
+        return dict(row) if row else None
+
+    def save_watch(self, key, values_json, text, checked_at, changed_at, note):
+        """【changed_at 只在真的变了的时候才动】。每次核对都刷新它的话，
+        页面上那句"上次变化"就变成了"上次核对"，而这两件事的意义完全不同。"""
+        with self.lock:
+            self.db.execute(
+                """INSERT INTO watch (key, values_json, text, checked_at, changed_at, note)
+                   VALUES (?,?,?,?,?,?)
+                   ON CONFLICT(key) DO UPDATE SET
+                     values_json=excluded.values_json, text=excluded.text,
+                     checked_at=excluded.checked_at, changed_at=excluded.changed_at,
+                     note=excluded.note""",
+                (key, values_json, text, checked_at, changed_at, note),
+            )
+            self.db.commit()
 
     def add(self, item, matched, now):
         """写一行。之前见过就返回 False。

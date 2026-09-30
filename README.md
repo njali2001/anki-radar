@@ -193,6 +193,27 @@ The fields, whether you edit them in the page or the file:
                     to keep). max_videos_for_comments caps the requests: one per
                     video.
 
+## Watching the official numbers
+
+The sidebar carries one block that is not a source of posts: it re-reads the
+official AnkiWeb FAQ every twelve hours and shows the limits it found there —
+currently a collection of 100MB compressed / 250MB uncompressed, media with no
+total cap, and individual media files capped at 100MB.
+
+It exists because a marketing page can rest on someone else's number. If that
+number moves, nothing breaks and nobody writes to tell you: the FAQ still loads,
+Anki still syncs, and only your own copy is quietly advertising a fact that has
+expired. Since February 2026 Anki's business operations and open-source
+stewardship have been passing from Damien Elmes to AnkiHub, a company with a
+product team, and that same FAQ page says "a pricing system may be introduced" —
+so the number now has a reason to move.
+
+The check is one HTTP GET, no AI, and it runs in the background when the page is
+refreshed and the last reading is stale, so refreshing often costs nothing. A
+changed figure is stated in the block as `old → new`; a page whose wording moved
+while the figures held still says so too, quoting the sentences that changed.
+Configure it under `watch` in `config.json`.
+
 ## Why not the Reddit API
 
 Since Reddit's Responsible Builder Policy (November 2025), OAuth app registration
@@ -209,6 +230,7 @@ rate. If API access is granted, swapping the source is a small change — but th
     ui.py               the local page: one button per source, no external access
     store.py            SQLite storage, de-duplication, your done/ignore marks
     paths.py            where code ends and data begins — the only authority
+    watch.py            re-reads official pages, reports when the numbers move
     sample_posts.json   offline sample data for --sample
     config.example.json copy to config.json (which is gitignored)
     setup-runtime.bat   fetch + verify the bundled Python (Windows, run once)
