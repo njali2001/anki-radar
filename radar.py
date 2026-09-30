@@ -1227,20 +1227,54 @@ document.querySelectorAll(".acts").forEach(acts => {{
   acts.querySelectorAll(".act[data-value]").forEach(btn => {{
     btn.addEventListener("click", async () => {{
       const card = acts.closest(".card");
+      // 【panel 必须在删卡片之前拿】：card.remove() 之后这张卡就脱离了文档，
+      // 而 closest() 只往祖先走——于是它返回 null，下一行 panel.dataset 直接抛。
+      // 抛在 async 处理器里不触发 window.onerror，所以表现是"卡片没了，数字
+      // 一个都没变，控制台也不红"（2026-09-29 查出来，老代码也有这一处）。
+      const panel = acts.closest(".panel");
+      const source = panel ? panel.dataset.source : "";
       card.classList.add("gone");
       const url = "/verdict?id=" + encodeURIComponent(acts.dataset.id)
                 + "&value=" + btn.dataset.value;
       const res = await fetch(url);
       if (res.ok) {{
         card.remove();
-        // 【tab 上的条数跟着减】：处理掉一条之后徽章还写着原来的数字，
-        // 人会以为没生效，然后再点一次。
-        const panel = acts.closest(".panel");
+        // 【左边那些数字要当场跟着减】：处理掉一条之后数字还写着原来的值，
+        // 人会以为没生效，然后再点一次（2026-09-29 运营者遇到）。
+        //
+        // 【这里曾经找的是 .tab】：布局从 tab 改成左边一栏之后，这个选择器
+        // 什么都选不到，于是静默失效——徽章、总数、"这一轮几条"三处全都要刷新
+        // 页面才会变。**选择器失配不会报错**，这正是它能活这么久的原因。
         const badge = document.querySelector(
-          '.tab[data-source="' + panel.dataset.source + '"] .badge');
+          '.src-item[data-source="' + source + '"] .badge');
         if (badge) {{
           const left = Math.max(0, parseInt(badge.textContent, 10) - 1);
-          if (left) {{ badge.textContent = left; }} else {{ badge.remove(); }}
+          badge.textContent = left;
+          // 【0 也要显示】（和服务端同一条规矩）：没有徽章和"这个源确实是 0 条"
+          // 长得一样，但意思差很多——后者是看过之后的结论。
+          badge.classList.toggle("zero", left === 0);
+        }}
+
+        const total = document.querySelector("header .total");
+        if (total) {{
+          const left = Math.max(0, parseInt(total.textContent.replace(/[^0-9]/g, ""), 10) - 1);
+          total.textContent = "（" + left + "）";
+        }}
+
+        const count = panel && panel.querySelector("h2 .count");
+        if (count) {{
+          const shown = panel.querySelectorAll(".card").length;
+          // 后半句"还有 N 条排队"不用动：待处理和已显示同时少一条，排队的没变。
+          const tail = count.textContent.slice(count.textContent.indexOf("，"));
+          count.textContent = "这一轮 " + shown + " 条" +
+            (count.textContent.includes("，") ? tail : "");
+        }}
+
+        if (panel && !panel.querySelector(".card")) {{
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "这一轮没有值得看的。";
+          panel.appendChild(empty);
         }}
       }}
       else {{ card.classList.remove("gone"); step.textContent = "标记失败，刷新页面再试"; }}
