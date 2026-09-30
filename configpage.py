@@ -449,6 +449,8 @@ body.app .topbar h1 { margin: 0; padding: 0; }
 .cfg-msg { padding: 10px 14px; border-left: 3px solid var(--ok-line); background: var(--good-bg);
            color: var(--save-text); font-size: 13.5px; margin: 0 0 18px; }
 .cfg-msg.bad { border-left-color: var(--bad-line); background: var(--bad-bg); color: var(--bad-text); }
+.cfg-msg.warn { border-left-color: var(--warn-text); background: var(--warn-bg);
+                color: var(--warn-text); }
 /* 【提示条要能关掉】（2026-09-23 运营者提）："保存好了"看过一眼就没用了，
    却一直占着表单顶上那块地方。 */
 .cfg-msg { position: relative; padding-right: 34px; }
@@ -626,7 +628,7 @@ def _render_watch(store, config):
     return "".join(cells)
 
 
-def render(store, config, message=None, errors=None, active=None):
+def render(store, config, message=None, errors=None, active=None, hold=None):
     """整页。左边是分组，右边是表单——和榜单页同构，省一次学习。"""
     import radar
 
@@ -676,7 +678,12 @@ def render(store, config, message=None, errors=None, active=None):
     close = ('<button type="button" class="msg-x" aria-label="关闭" '
              'onclick="this.parentNode.remove()">&times;</button>')
     note = ""
-    if errors:
+    # 【"拦一下"不是"填错了"】（2026-09-29 运营者撞上）：扫描中不许保存是一个
+    # 暂时的状态，人什么都没填错，可它原来走的是错误那条路，标题写着"这些地方
+    # 要先改掉"——于是人去找哪儿错了，而根本没有哪儿错。
+    if hold:
+        note = f'<div class="cfg-msg warn">{close}{_esc(hold)}</div>'
+    elif errors:
         note = ('<div class="cfg-msg bad">' + close
                 + "这些地方要先改掉，整份都还没保存：<ul>"
                 + "".join(f"<li>{_esc(e)}</li>" for e in errors) + "</ul></div>")

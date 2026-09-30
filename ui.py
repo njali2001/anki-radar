@@ -129,14 +129,20 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
                 import configpage
 
                 if path == "/config":
+                    form = configpage.parse_form(raw.decode("utf-8"))
                     # 【扫描时不许保存】：扫到一半换配置，这一轮会得到一份
                     # 半新半旧的结果，而且没人说得清是按哪份配置跑的。
+                    #
+                    # 【但人填的东西必须留住】（2026-09-29 运营者撞上）：原来这里
+                    # 直接拿磁盘上那份去渲染，于是他刚改的数字被悄悄换回旧值，
+                    # 页面上却只说"等扫完再保存"——照着做，改的东西早没了。
                     if state.snapshot().get("busy"):
+                        typed, _ = configpage.apply_form(configpage.load(), form)
                         self._send(configpage.render(
-                            store, config,
-                            errors=["正在扫描，等这一轮扫完再保存"]))
+                            store, typed,
+                            hold="正在扫描，这一轮扫完再点一次保存。"
+                                 "你改的内容还留在下面的表单里，没有丢。"))
                         return
-                    form = configpage.parse_form(raw.decode("utf-8"))
                     updated, errors = configpage.apply_form(configpage.load(), form)
                     if errors:
                         # 【错了就把人填的东西原样显示回去】：用提交上来的那份

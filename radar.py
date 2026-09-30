@@ -497,6 +497,8 @@ STYLE = """
   --busy: #e8c35a; --busy-line: #4a4326; --busy-text: #e8d9a8;
   --warn: #c96a4e; --warn-line: #4a2f26; --warn-text: #e8b0a0;
   --bad-line: #6b3a2c; --bad-text: #f0a08a; --bad-bg: #1d1614; --good-bg: #171b17;
+  /* 【拦一下】用的底色：比 bad 轻，比 good 显眼——它既不是错也不是成功。 */
+  --warn-bg: #1f1a14;
   --save-bg: #1f2a15; --save-line: #3a4a26; --save-text: #cfe8a8;
   --quote-line: #2f4a63; --quote-bg: #171b21;
   --tag-forum-bg: #1f3346; --tag-forum-text: #9cc9f0;
@@ -522,6 +524,7 @@ STYLE = """
   --busy: #c68a12; --busy-line: #e0c27e; --busy-text: #7a5a10;
   --warn: #c05a35; --warn-line: #e3b39f; --warn-text: #9b4526;
   --bad-line: #c0553a; --bad-text: #9e3a1e; --bad-bg: #fdf1ed; --good-bg: #f1f8e9;
+  --warn-bg: #fdf6ec;
   --save-bg: #edf7e1; --save-line: #a6cd78; --save-text: #33591a;
   --quote-line: #7ba4cc; --quote-bg: #f1f6fc;
   --tag-forum-bg: #e3eefb; --tag-forum-text: #1b4f80;
