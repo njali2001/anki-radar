@@ -164,12 +164,19 @@ def status(store):
         row = store.get_watch(spec["key"]) or {}
         values = json.loads(row.get("values_json") or "{}")
         headline = " / ".join(values.get(k, "?") for k in spec["headline"]) if values else "还没核对过"
+        # 【页面上要显示人话】：values 的键是代码里的字段名（collection_zip 之类），
+        # 给人看的是"collection 压缩后"。yes/no 同理——它在代码里是标记，在页面上
+        # 是一句判断。
+        detail = [{"label": _label_of(spec, k),
+                   "value": {"yes": "是", "no": "否"}.get(v, v)}
+                  for k, v in values.items()]
         out.append({
             "key": spec["key"],
             "label": spec["label"],
             "url": spec["url"],
             "headline": headline,
             "values": values,
+            "detail": detail,
             "checked_at": row.get("checked_at") or 0,
             "changed_at": row.get("changed_at"),
             "note": row.get("note") or "",

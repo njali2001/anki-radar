@@ -127,6 +127,16 @@ SECTIONS = [
         ],
     },
     {
+        "key": "watch",
+        "label": "官方口径",
+        "fields": [
+            field("watch.enabled", "启用", "bool"),
+            field("watch.min_interval_minutes", "两次核对至少隔（分钟）", "int",
+                  "默认 720（半天）。页面刷新得再勤也不会多发请求。",
+                  min=10, max=10080),
+        ],
+    },
+    {
         "key": "ai",
         "label": "AI 与额度",
         "fields": [
@@ -175,6 +185,9 @@ GROUPS = {
         ("留多少", ["youtube.max_age_days"]),
         ("节流与配额", ["youtube.max_videos_for_comments",
                    "youtube.min_interval_minutes", "youtube.pause_seconds"]),
+    ],
+    "watch": [
+        ("怎么核对", ["watch.enabled", "watch.min_interval_minutes"]),
     ],
     "ai": [
         ("AI 筛选", ["ai.enabled", "ai.min_score", "ai.candidates", "ai.batch_size",
@@ -368,6 +381,16 @@ def parse_form(body):
 # --- 页面 ---------------------------------------------------------------------
 
 CONFIG_STYLE = """
+/* 官方口径那一块在设置页上的补充样式（主体样式在 radar.STYLE 里）。
+   这里比首页那一版多一张字段表——设置页是特意点进来的，看得起细节。 */
+.watch { margin-bottom: 14px; }
+.watch-grid { margin-top: 10px; display: grid; gap: 2px 18px;
+              grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.watch-kv { display: flex; justify-content: space-between; gap: 10px;
+            border-bottom: 1px dotted var(--border); padding: 4px 0; font-size: 12.5px; }
+.watch-kv b { color: var(--text); font-variant-numeric: tabular-nums; }
+.watch-line { word-break: break-all; font-size: 12.5px; color: var(--muted) !important; }
+
 /* 【表单也要接进那条 flex 链】：榜单页是 body.app > .wrap，两栏各滚各的；
    配置页在中间多包了一层 <form>，链子就断在这里——.wrap 拿不到高度，.main 的
    overflow-y:auto 等于没写，内容被 body 的 overflow:hidden 直接裁掉，鼠标怎么
@@ -552,9 +575,65 @@ def _render_usage(store, config):
     return f'<div class="quota">{"".join(cells)}</div>'
 
 
+def _render_watch(store, config):
+    """官方页面上的数字现在是多少、上次什么时候核对的、上次变的是什么。
+
+    【为什么不做成一个"源"】：它不产出要回复的帖子，也不该占首页的位置——
+    首页回答的是"今天有谁要回"，而这一块回答的是"外面的规则变没变"，
+    一年里 364 天答案都是"没变"。天天喊一次，第 365 天真变那次就没人看了。
+
+    【为什么值得有】：LeeAB 首页整句话压在别人家的一个数字上（AnkiWeb 的
+    collection 上限 250 MB）。它变了不会有任何人通知你：FAQ 照常打开、Anki 照常
+    同步，只有我们自己的文案在替一个过期的事实做广告。
+    """
+    import time
+
+    import watch
+
+    rows = watch.status(store)
+    if not rows:
+        return ""
+    cells = []
+    for item in rows:
+        if watch.busy():
+            # 正在取的时候显示"3 天前核对过"是在说谎——刷新一下就会变。
+            when = "正在核对…"
+        elif not item["checked_at"]:
+            when = "还没核对过"
+        else:
+            when = _ago(item["checked_at"]) + "核对过"
+
+        note, css = "", ""
+        if item["changed_at"] and item["note"]:
+            fresh = time.time() - item["changed_at"] < 14 * 86400
+            css = " hot" if fresh else ""
+            stamp = time.strftime("%Y-%m-%d", time.localtime(item["changed_at"]))
+            note = f'<div class="watch-note">{stamp} 变过：{_esc(item["note"])[:300]}</div>'
+        elif item["checked_at"]:
+            when += " · 没变"
+
+        detail = "".join(
+            f'<div class="watch-kv"><span>{_esc(row["label"])}</span>'
+            f'<b>{_esc(row["value"])}</b></div>'
+            for row in item.get("detail", []))
+        cells.append(
+            f'<div class="watch{css}">'
+            f'<div class="watch-head">{_esc(item["label"])}</div>'
+            f'<a class="watch-line" href="{_esc(item["url"])}" target="_blank" '
+            f'rel="noopener">{_esc(item["url"])}</a>'
+            f'<div class="watch-when">{when}</div>'
+            f'{note}<div class="watch-grid">{detail}</div></div>')
+    return "".join(cells)
+
+
 def render(store, config, message=None, errors=None, active=None):
     """整页。左边是分组，右边是表单——和榜单页同构，省一次学习。"""
     import radar
+
+    import watch as _watch
+
+    # 【进设置页时顺手看一眼】：过期了才真去取，而且在后台，不拖慢这一页。
+    _watch.refresh_if_stale(store, config)
 
     stats = store.keyword_details()
     # 【表单要自报家门】：浏览器只提交勾上的复选框，没勾的压根不出现——所以
@@ -574,6 +653,8 @@ def render(store, config, message=None, errors=None, active=None):
         body = []
         if section["key"] == "ai":
             body.append(_render_usage(store, config))
+        if section["key"] == "watch":
+            body.append(_render_watch(store, config))
         used = set()
         for title, paths in GROUPS.get(section["key"], []):
             cells = [_render_field(config, by_path[path], stats)
