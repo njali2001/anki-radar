@@ -42,6 +42,42 @@ CREATE TABLE IF NOT EXISTS watch (
     changed_at INTEGER,
     note       TEXT NOT NULL DEFAULT ''
 );
+-- 【我们自己那条片子的数字】：见 video.py。和 watch 不同，这里要的是趋势，
+-- 所以一天一行；同一天重复取就覆盖，否则"趋势"会取决于你那天刷了几次页面。
+-- 存的是 YouTube 给的【累计数】，日增量在读的时候算——存原始值才有可能
+-- 事后重算，存算好的差值就没了。
+CREATE TABLE IF NOT EXISTS video_stats (
+    video_id   TEXT NOT NULL,
+    day        TEXT NOT NULL,            -- YYYY-MM-DD，本地时区
+    title      TEXT NOT NULL DEFAULT '',
+    views      INTEGER NOT NULL DEFAULT 0,
+    likes      INTEGER NOT NULL DEFAULT 0,
+    comments   INTEGER NOT NULL DEFAULT 0,
+    fetched_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (video_id, day)
+);
+-- 【频道主数据】：见 analytics.py。和 video_stats 分开存，因为口径不同——
+-- video_stats 是接近实时的累计数，这里是滞后 24-48 小时的窗口汇总。
+-- 混在一张表里，日后一定会有人把两个 views 相减。
+CREATE TABLE IF NOT EXISTS video_analytics (
+    video_id       TEXT PRIMARY KEY,
+    window_days    INTEGER NOT NULL DEFAULT 30,
+    views          INTEGER NOT NULL DEFAULT 0,
+    minutes        INTEGER NOT NULL DEFAULT 0,
+    avg_duration   INTEGER NOT NULL DEFAULT 0,   -- 秒
+    avg_percentage REAL    NOT NULL DEFAULT 0,
+    fetched_at     INTEGER NOT NULL DEFAULT 0
+);
+-- 流量来源 / 搜索词 / 国家。【整批替换，不累加】：这是"最近 30 天的排行"，
+-- 累加的话窗口会越滑越长，而那不是要看的东西。
+CREATE TABLE IF NOT EXISTS video_breakdown (
+    video_id   TEXT NOT NULL,
+    kind       TEXT NOT NULL,          -- traffic / search / country
+    label      TEXT NOT NULL,
+    views      INTEGER NOT NULL DEFAULT 0,
+    fetched_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (video_id, kind, label)
+);
 CREATE INDEX IF NOT EXISTS posts_posted   ON posts (posted_at DESC);
 """
 
@@ -89,6 +125,92 @@ class Store:
                 (key, values_json, text, checked_at, changed_at, note),
             )
             self.db.commit()
+
+    # --- 自己那条片子的数字（video.py） -------------------------------
+
+    def save_video_stats(self, video_id, day, title, views, likes, comments,
+                         fetched_at):
+        """一天一行，同一天再取就覆盖。"""
+        with self.lock:
+            self.db.execute(
+                """INSERT INTO video_stats
+                   (video_id, day, title, views, likes, comments, fetched_at)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(video_id, day) DO UPDATE SET
+                     title=excluded.title, views=excluded.views,
+                     likes=excluded.likes, comments=excluded.comments,
+                     fetched_at=excluded.fetched_at""",
+                (video_id, day, title, views, likes, comments, fetched_at),
+            )
+            self.db.commit()
+
+    def video_series(self, video_id, limit=31):
+        """按日期【从旧到新】，方便直接相邻相减算增量。"""
+        with self.lock:
+            rows = self.db.execute(
+                """SELECT day, title, views, likes, comments, fetched_at
+                   FROM video_stats WHERE video_id = ?
+                   ORDER BY day DESC LIMIT ?""",
+                (video_id, limit),
+            ).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    def video_checked_at(self, video_id):
+        with self.lock:
+            row = self.db.execute(
+                "SELECT MAX(fetched_at) AS t FROM video_stats WHERE video_id = ?",
+                (video_id,),
+            ).fetchone()
+        return (row["t"] if row and row["t"] else 0) or 0
+
+    # --- 频道主数据（analytics.py） -----------------------------------
+
+    def save_video_analytics(self, video_id, window_days, views, minutes,
+                             avg_duration, avg_percentage, fetched_at):
+        with self.lock:
+            self.db.execute(
+                """INSERT INTO video_analytics
+                   (video_id, window_days, views, minutes, avg_duration,
+                    avg_percentage, fetched_at)
+                   VALUES (?,?,?,?,?,?,?)
+                   ON CONFLICT(video_id) DO UPDATE SET
+                     window_days=excluded.window_days, views=excluded.views,
+                     minutes=excluded.minutes, avg_duration=excluded.avg_duration,
+                     avg_percentage=excluded.avg_percentage,
+                     fetched_at=excluded.fetched_at""",
+                (video_id, window_days, views, minutes, avg_duration,
+                 avg_percentage, fetched_at),
+            )
+            self.db.commit()
+
+    def get_video_analytics(self, video_id):
+        with self.lock:
+            row = self.db.execute(
+                "SELECT * FROM video_analytics WHERE video_id = ?",
+                (video_id,)).fetchone()
+        return dict(row) if row else None
+
+    def save_video_breakdown(self, video_id, rows, fetched_at):
+        """【先删后插，一次事务】：排行会掉出榜单，只 upsert 的话掉下去的那些
+        会永远留在表里，而页面上看不出它们是上一轮的。"""
+        with self.lock:
+            self.db.execute("DELETE FROM video_breakdown WHERE video_id = ?",
+                            (video_id,))
+            self.db.executemany(
+                "INSERT INTO video_breakdown"
+                " (video_id, kind, label, views, fetched_at) VALUES (?,?,?,?,?)",
+                [(video_id, kind, label, views, fetched_at)
+                 for kind, label, views in rows],
+            )
+            self.db.commit()
+
+    def video_breakdown(self, video_id):
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT kind, label, views FROM video_breakdown"
+                " WHERE video_id = ? ORDER BY kind, views DESC",
+                (video_id,)).fetchall()
+        return [dict(r) for r in rows]
 
     def add(self, item, matched, now):
         """写一行。之前见过就返回 False。

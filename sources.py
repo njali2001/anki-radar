@@ -467,6 +467,39 @@ def youtube_videos(query, key, lang=None, limit=10):
     return items
 
 
+def youtube_video_stats(video_id, key):
+    """我们【自己】那条片子的公开数字。见 video.py。
+
+    【videos.list 一次 1 个单位】，而搜索要 100——所以天天取也花不了什么。
+
+    【statistics 里的字段可能整个缺席】：频道主可以把点赞数藏起来，评论区
+    关掉之后 commentCount 也不会出现。缺了就当 0，不要 KeyError——
+    一个统计面板不值得为此崩掉。
+    """
+    data = _youtube("videos", {"part": "snippet,statistics", "id": video_id}, key)
+    items = data.get("items") or []
+    if not items:
+        raise SourceError(f"YouTube：找不到视频 {video_id}（私有、被删，或者 ID 写错了）")
+    item = items[0]
+    stats = item.get("statistics") or {}
+    snippet = item.get("snippet") or {}
+
+    def _int(name):
+        try:
+            return int(stats.get(name) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    return {
+        "id": video_id,
+        "title": snippet.get("title") or "",
+        "published_at": snippet.get("publishedAt") or "",
+        "views": _int("viewCount"),
+        "likes": _int("likeCount"),
+        "comments": _int("commentCount"),
+    }
+
+
 def youtube_comments(video_id, key, limit=20):
     """一个视频下最新的评论。
 

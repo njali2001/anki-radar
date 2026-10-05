@@ -160,5 +160,26 @@
     "enabled": true,
     "_min_interval_minutes": "两次真去取之间至少隔这么久。页面刷新得再勤也不会多发请求。",
     "min_interval_minutes": 720
+  },
+  "video": {
+    "_说明": "我们自己那条 YouTube 片子涨得怎么样（见 video.py）。长在设置页上，刷新就看见，不占首页——首页是“今天有谁要回”。",
+    "_只有公开数字": "用的是 Data API v3，拿得到观看/点赞/评论数，一次 1 个配额单位。观看时长、流量来源、搜索词、地理分布属于 Analytics API，要走 OAuth 拿频道主授权，这里没做。字幕语言的使用量YouTube 根本不提供。",
+    "enabled": false,
+    "_videos": "要盯哪几条。id 是 youtu.be/ 后面那一串。",
+    "videos": [
+      {
+        "label": "4 步搬家教程",
+        "id": "vNOnNc7y8kA"
+      }
+    ],
+    "_min_interval_minutes": "两次真去取之间至少隔这么久。默认 720（半天）。",
+    "min_interval_minutes": 720,
+    "oauth": {
+      "_说明": "YouTube Analytics（观看时长、流量来源、搜索词、地理）要频道主授权。跑一次 runtime\\python.exe oauth.py 就会把 refresh_token 写进来。",
+      "_同意屏幕必须是 In production": "留在默认的 Testing 的话，refresh token 7 天就过期，监控会安静地停掉。",
+      "client_id": "",
+      "client_secret": "",
+      "refresh_token": ""
+    }
   }
 }

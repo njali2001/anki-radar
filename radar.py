@@ -631,10 +631,15 @@ body.app .side::-webkit-scrollbar-thumb, body.app .main::-webkit-scrollbar-thumb
 
 /* 【设置放在侧栏最下面】：它是"偶尔来一次"的东西，不该和每天都点的扫描按钮
    抢位置，但也不能藏到找不着。 */
-.cfg-link { display: block; margin-top: 4px; padding: 8px 14px; color: var(--muted);
-            font-size: 13px; text-decoration: none; border: 1px solid transparent;
-            border-radius: 12px; }
-.cfg-link:hover { color: var(--text-2); border-color: var(--border-strong); }
+/* 【导航用淡蓝，不跟按钮一起用绿】（2026-10-05 运营者定）。
+   绿色那批是在这一页上做一件事（扫一遍、取数、保存）；这两个是换一页。
+   两类动作用同一个颜色，人得读完字才知道点下去会不会离开当前页面。
+   颜色取自 --tag-forum-*，深浅两套主题都已经配好对比度，不另调一组。 */
+.cfg-link, .nav-link { display: block; margin-top: 4px; padding: 8px 14px;
+            color: var(--tag-forum-text); background: var(--tag-forum-bg);
+            font-size: 13px; text-decoration: none;
+            border: 1px solid transparent; border-radius: 12px; }
+.cfg-link:hover, .nav-link:hover { border-color: var(--tag-forum-text); }
 .badge { margin-left: auto; background: var(--border-strong); color: var(--text-2); border-radius: 999px;
          font-size: 12px; padding: 1px 9px; }
 .src-item.on .badge { background: var(--ok-line); color: var(--mark-text); }
@@ -643,9 +648,9 @@ body.app .side::-webkit-scrollbar-thumb, body.app .main::-webkit-scrollbar-thumb
 .panel { display: none; }
 .panel.on { display: block; }
 .src-btn { display: block; width: 100%; margin-top: 10px; cursor: pointer;
-           border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px;
-           background: var(--sunken); color: var(--text-3); font: inherit; font-size: 13px; }
-.src-btn:hover { border-color: var(--border-hover); color: var(--text-2); }
+           border: 1px solid var(--save-line); border-radius: 8px; padding: 6px 10px;
+           background: var(--save-bg); color: var(--save-text); font: inherit; font-size: 13px; }
+.src-btn:hover:not([disabled]) { border-color: var(--ok); color: var(--ok); }
 .src-btn[disabled] { cursor: default; opacity: .45; }
 .src-btn.busy { color: var(--busy-text); border-color: var(--busy-line); animation: pulse 1s infinite; }
 /* 窄窗口：侧栏放平成一排，别把正文挤成一条缝。 */
@@ -684,10 +689,15 @@ h2 .count { color: var(--muted); font-weight: 400; font-size: 13.5px; margin-lef
    读到最后一行还要往回找；靠右则是读完自然落到的位置，而且一列按钮对齐，
    连着处理好几条时鼠标不用来回挪。 */
 .acts { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
-.act { cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-3);
-       border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 13px; }
-.act:hover { border-color: var(--border-hover); color: var(--text-2); }
-.act.done:hover { border-color: var(--save-line); color: var(--save-text); }
+/* 【按钮统一用绿色】（2026-10-05 运营者定）。原来是灰描边，和周围的边框、
+   卡片线条分不开——一屏上十几条灰线，可点的那几个沉在里面。
+   绿色取自 --save-* 那一套，也就是「保存」用的颜色，不另起一个色系：
+   一个界面上两种可以点的颜色，人会去猜它们的差别。 */
+.act { cursor: pointer; border: 1px solid var(--save-line); background: var(--save-bg);
+       color: var(--save-text); border-radius: 8px; padding: 5px 12px;
+       font: inherit; font-size: 13px; }
+.act:hover:not(:disabled) { border-color: var(--ok); color: var(--ok); }
+.act:disabled { opacity: .5; cursor: default; }
 .card.gone { opacity: .35; }
 /* 要点是给人抄材料用的，不是成品回复——用等宽字体和缩进把它和帖子正文分开，
    免得看着像"可以直接贴出去的东西"。 */

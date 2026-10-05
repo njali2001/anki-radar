@@ -137,6 +137,17 @@ SECTIONS = [
         ],
     },
     {
+        "key": "video",
+        "label": "我们的片子",
+        "fields": [
+            field("video.enabled", "启用", "bool"),
+            field("video.min_interval_minutes", "两次取数至少隔（分钟）", "int",
+                  "默认 720（半天）。页面刷新得再勤也不会多发请求。"
+                  "一次只花 1 个配额单位，搜索要 100。",
+                  min=60, max=10080),
+        ],
+    },
+    {
         "key": "ai",
         "label": "AI 与额度",
         "fields": [
@@ -188,6 +199,9 @@ GROUPS = {
     ],
     "watch": [
         ("怎么核对", ["watch.enabled", "watch.min_interval_minutes"]),
+    ],
+    "video": [
+        ("怎么取数", ["video.enabled", "video.min_interval_minutes"]),
     ],
     "ai": [
         ("AI 筛选", ["ai.enabled", "ai.min_score", "ai.candidates", "ai.batch_size",
@@ -384,6 +398,23 @@ CONFIG_STYLE = """
 /* 官方口径那一块在设置页上的补充样式（主体样式在 radar.STYLE 里）。
    这里比首页那一版多一张字段表——设置页是特意点进来的，看得起细节。 */
 .watch { margin-bottom: 14px; }
+/* 【最近两周的日增量，一天一根】。画成柱子而不是列数字：这块要回答的是
+   "在涨还是在平"，那是个形状问题，不是数值问题。 */
+/* 【标题行改成 flex】：按钮要贴在标题右边，而不是另起一行占掉一整行高度。
+   margin-left:auto 把按钮推到最右，中间留给标题本身。 */
+.watch-head { display: flex; align-items: center; gap: 10px; }
+/* 【按钮用绿色，不用默认那个灰黑描边】：这一块里它是唯一可以点的东西，
+   要一眼看得出来。绿色取自 --ok，和左栏"扫完了"那个点是同一套色，
+   不另起一个颜色体系。 */
+/* 颜色现在由基础的 .act 管（radar.STYLE），这里只管位置和尺寸。 */
+.act.mini { margin-left: auto; padding: 3px 11px; font-size: 12.5px; }
+.vid-msg { color: var(--muted); font-size: 12.5px; }
+.vid-sub { margin-top: 12px; }
+.vid-sub > b { font-size: 13px; color: var(--text-2); }
+.vid-spark { margin-top: 10px; display: flex; align-items: flex-end; gap: 3px;
+             height: 40px; }
+.vid-spark i { flex: 1; background: var(--ok-line); border-radius: 2px 2px 0 0;
+               min-height: 2px; }
 .watch-grid { margin-top: 10px; display: grid; gap: 2px 18px;
               grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .watch-kv { display: flex; justify-content: space-between; gap: 10px;
@@ -628,6 +659,192 @@ def _render_watch(store, config):
     return "".join(cells)
 
 
+_video_busy = __import__("threading").Lock()
+
+
+def _refresh_video_if_stale(store, config):
+    """过期了就在后台取一次，【立刻返回】。
+
+    和 watch 一样：渲染线程里同步等网络会让整页卡住几秒，而这一项的新鲜度
+    不值那个代价。人下次刷新就看见了——运营者要的就是"主动刷新才看"。
+    """
+    import threading
+
+    import video
+
+    if not video.is_stale(store, config):
+        return False
+    if not _video_busy.acquire(blocking=False):
+        return False
+
+    def run():
+        try:
+            video.refresh(store, config)
+        finally:
+            _video_busy.release()
+
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
+def _render_analytics(store, config):
+    """频道主数据。【和上面那块分开写】：上面是接近实时的公开数字，这里滞后
+    24-48 小时。并排显示同一个"观看数"而不说明口径，人会以为哪边算错了。"""
+    import time
+
+    import analytics
+    import video
+
+    if not analytics.configured(config):
+        return ('<div class="watch"><div class="watch-head">频道主数据</div>'
+                '<div class="watch-when">还没授权。观看时长、流量来源、搜索词、'
+                '地理分布只有频道主看得到，要跑一次 <code>oauth.py</code>——'
+                '步骤写在那个文件顶上。</div></div>')
+
+    blocks = []
+    for t in video.targets(config):
+        item = analytics.status(store, config, t["id"])
+        if item is None:
+            continue
+        if item.get("empty"):
+            blocks.append(
+                '<div class="watch">'
+                '<div class="watch-head">频道主数据'
+                '<button type="button" class="act mini" id="an-refresh">Refresh</button>'
+                '<span class="vid-msg" id="an-msg"></span></div>'
+                '<div class="watch-when">还没取过。点右上角的 Refresh。'
+                '</div></div>')
+            continue
+
+        stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(item["fetched_at"]))
+        rows = [
+            (f'最近 {item["window_days"]} 天观看', f'{item["views"]:,}'),
+            ("观看总时长（分钟）", f'{item["minutes"]:,}'),
+            ("平均观看时长", f'{item["avg_duration"] // 60}:{item["avg_duration"] % 60:02d}'),
+            ("平均看完比例", f'{item["avg_percentage"]:.1f}%'),
+        ]
+        detail = "".join(
+            f'<div class="watch-kv"><span>{_esc(k)}</span><b>{_esc(v)}</b></div>'
+            for k, v in rows)
+
+        def _list(title, items, empty_hint):
+            if not items:
+                return (f'<div class="vid-sub"><b>{_esc(title)}</b>'
+                        f'<div class="watch-when">{_esc(empty_hint)}</div></div>')
+            body = "".join(
+                f'<div class="watch-kv"><span>{_esc(str(i["label"]))}</span>'
+                f'<b>{i["views"]:,}</b></div>' for i in items)
+            return (f'<div class="vid-sub"><b>{_esc(title)}</b>'
+                    f'<div class="watch-grid">{body}</div></div>')
+
+        lists = (
+            _list("流量来源", item["traffic"], "还没有数据"),
+            # 【搜索词单独说明为什么可能是空的】：片子新、或者还没人靠搜索
+            # 找到它，这时候空着是对的，不是出错。
+            _list("搜索词（人搜什么找到的）", item["search"],
+                  "还没有人通过搜索找到这条片子"),
+            _list("观众在哪儿", item["country"], "还没有数据"),
+        )
+        blocks.append(
+            f'<div class="watch">'
+            f'<div class="watch-head">频道主数据'
+            f'<button type="button" class="act mini" id="an-refresh">Refresh</button>'
+            f'<span class="vid-msg" id="an-msg"></span></div>'
+            f'<div class="watch-when">上次更新 {stamp}'
+            f'　·　这一档滞后 24–48 小时，和上面那块的数字对不上是正常的</div>'
+            f'<div class="watch-grid">{detail}</div>'
+            f'{"".join(lists)}</div>')
+
+    return "".join(blocks)
+
+
+def _render_video(store, config):
+    """我们自己那条片子的数字。
+
+    【和上面那块「官方口径」不一样】：那块看的是"变没变"，一年 364 天都是
+    "没变"；这块看的是【涨了多少】，所以显示的是日增量，不是"变了"。
+
+    【没配 API key 就说清楚缺什么】。静默显示一块空面板，人会以为是没数据，
+    于是去等——而实际上是永远不会有数据。
+    """
+    import time
+
+    import video
+
+    items = video.status(store, config)
+    if not items:
+        return ""
+    if not config.get("youtube", {}).get("api_key"):
+        return ('<div class="watch"><div class="watch-head">我们的片子</div>'
+                '<div class="watch-when">还没填 YouTube API key'
+                '（在上面「YouTube」那一栏），填了才会取数。</div></div>')
+
+    # 口径的说明只留在「频道主数据」那一块上——它才是会让人困惑的那个：
+    # 滞后两天、而且数字比上面小。两块都写一遍反而啰嗦。
+    cells = []
+    for item in items:
+        head = _esc(item["label"])
+        url = f'https://youtu.be/{item["id"]}'
+        if item.get("empty"):
+            cells.append(
+                f'<div class="watch">'
+                f'<div class="watch-head">{head}'
+                f'<button type="button" class="act mini" id="vid-refresh">Refresh</button>'
+                f'<span class="vid-msg" id="vid-msg"></span></div>'
+                f'<a class="watch-line" href="{_esc(url)}" target="_blank" '
+                f'rel="noopener">{_esc(url)}</a>'
+                f'<div class="watch-when">还没取过数，下次刷新这一页就会取。</div>'
+                f'</div>')
+            continue
+
+        # 【写精确到分钟的时刻，不只写"今天取过"】。这是会变的数字，
+        # "今天"跨度太大——早上八点取的和晚上八点取的，差了一整天的播放量。
+        stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(item["checked_at"]))
+        when = f'上次更新 {stamp}（{_ago(item["checked_at"])}）'
+        # 【攒够两天才谈增量】。只有一天数据时"本周 0 次"会被读成"没人看"，
+        # 而实际是我们还不知道。
+        if item["week_days"] >= 1:
+            trend = (f'<div class="watch-kv"><span>最近 {item["week_days"]} 天新增</span>'
+                     f'<b>{item["week_views"]:,}</b></div>')
+        else:
+            trend = ('<div class="watch-kv"><span>最近新增</span>'
+                     '<b>还要再取一天才算得出</b></div>')
+
+        rows = [
+            ("总观看", f'{item["views"]:,}'),
+            ("点赞", f'{item["likes"]:,}'),
+            ("评论", f'{item["comments"]:,}'),
+            ("攒了几天数据", str(item["days"])),
+        ]
+        detail = "".join(
+            f'<div class="watch-kv"><span>{_esc(k)}</span><b>{_esc(v)}</b></div>'
+            for k, v in rows)
+
+        spark = ""
+        if len(item["deltas"]) >= 2:
+            peak = max(d["views"] for d in item["deltas"]) or 1
+            bars = "".join(
+                f'<i style="height:{max(2, round(100.0 * d["views"] / peak))}%" '
+                f'title="{_esc(d["day"])}：{d["views"]:,}"></i>'
+                for d in item["deltas"])
+            spark = f'<div class="vid-spark">{bars}</div>'
+
+        # 【按钮长在自己那块的标题上】：两个按钮都叫 Refresh，靠位置区分
+        # 它刷的是哪一块——挤在页面底下的话，光看名字分不出来。
+        cells.append(
+            f'<div class="watch">'
+            f'<div class="watch-head">{head}'
+            f'<button type="button" class="act mini" id="vid-refresh">Refresh</button>'
+            f'<span class="vid-msg" id="vid-msg"></span></div>'
+            f'<a class="watch-line" href="{_esc(url)}" target="_blank" '
+            f'rel="noopener">{_esc(_esc(item.get("title")) or url)}</a>'
+            f'<div class="watch-when">{when}</div>'
+            f'<div class="watch-grid">{trend}{detail}</div>{spark}</div>')
+
+    cells.append(_render_analytics(store, config))
+    return "".join(cells)
+
+
 def render(store, config, message=None, errors=None, active=None, hold=None):
     """整页。左边是分组，右边是表单——和榜单页同构，省一次学习。"""
     import radar
@@ -636,6 +853,7 @@ def render(store, config, message=None, errors=None, active=None, hold=None):
 
     # 【进设置页时顺手看一眼】：过期了才真去取，而且在后台，不拖慢这一页。
     _watch.refresh_if_stale(store, config)
+    _refresh_video_if_stale(store, config)
 
     stats = store.keyword_details()
     # 【表单要自报家门】：浏览器只提交勾上的复选框，没勾的压根不出现——所以
@@ -657,6 +875,8 @@ def render(store, config, message=None, errors=None, active=None, hold=None):
             body.append(_render_usage(store, config))
         if section["key"] == "watch":
             body.append(_render_watch(store, config))
+        if section["key"] == "video":
+            body.append(_render_video(store, config))
         used = set()
         for title, paths in GROUPS.get(section["key"], []):
             cells = [_render_field(config, by_path[path], stats)
@@ -706,8 +926,7 @@ def render(store, config, message=None, errors=None, active=None, hold=None):
 </header>
 <div class="wrap">
   <aside class="side">{"".join(side)}
-    <div class="src-item" style="cursor:pointer" onclick="location.href='/'">
-      <div class="src-name">← 回榜单</div></div>
+    <a class="nav-link" href="/">← 回榜单</a>
   </aside>
   <main class="main">
     {note}
@@ -785,6 +1004,45 @@ document.querySelectorAll(".try-btn").forEach(btn => {{
     }}
   }});
 }});
+
+/* 【「现在就取」】。取完整页重载，而不是只把数字塞回去：那一块里还有
+   柱状图、"攒了几天数据"、上次更新时刻，全都要跟着变，一个个改容易漏。
+   这一页本来就是人主动打开的，重载一次不打扰谁。 */
+const vidBtn = document.getElementById("vid-refresh");
+if (vidBtn) {{
+  vidBtn.addEventListener("click", async () => {{
+    const msg = document.getElementById("vid-msg");
+    vidBtn.disabled = true;                 /* 连点两下就是花两份配额 */
+    msg.textContent = "取数中…";
+    try {{
+      const res = await fetch("/config/video-refresh", {{ method: "POST" }});
+      const data = await res.json();
+      if (data.ok) {{ location.reload(); return; }}
+      msg.textContent = data.error || "取不到";
+    }} catch (e) {{
+      msg.textContent = "请求失败：" + e;
+    }}
+    vidBtn.disabled = false;
+  }});
+}}
+
+const anBtn = document.getElementById("an-refresh");
+if (anBtn) {{
+  anBtn.addEventListener("click", async () => {{
+    const msg = document.getElementById("an-msg");
+    anBtn.disabled = true;
+    msg.textContent = "取数中…（四次请求，可能要几秒）";
+    try {{
+      const res = await fetch("/config/analytics-refresh", {{ method: "POST" }});
+      const data = await res.json();
+      if (data.ok) {{ location.reload(); return; }}
+      msg.textContent = data.error || "取不到";
+    }} catch (e) {{
+      msg.textContent = "请求失败：" + e;
+    }}
+    anBtn.disabled = false;
+  }});
+}}
 
 document.getElementById("restore").addEventListener("click", async () => {{
   if (!confirm("把配置换回上一版？现在这一版会被存成备份，可以再换回来。")) return;

@@ -126,6 +126,25 @@ def serve(store, config, scan_source, render_page, port=8899, open_browser=True,
                     self._send(json.dumps({"text": text}), "application/json")
                     return
 
+                if path == "/config/video-refresh":
+                    # 【手动取数】：不检查间隔，理由见 video.refresh_now。
+                    import video
+
+                    result = video.refresh_now(store, config)
+                    self._send(json.dumps(result, ensure_ascii=False),
+                               "application/json",
+                               200 if result.get("ok") else 429)
+                    return
+
+                if path == "/config/analytics-refresh":
+                    import analytics
+
+                    result = analytics.refresh_now(store, config)
+                    self._send(json.dumps(result, ensure_ascii=False),
+                               "application/json",
+                               200 if result.get("ok") else 429)
+                    return
+
                 import configpage
 
                 if path == "/config":
