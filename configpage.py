@@ -411,6 +411,25 @@ CONFIG_STYLE = """
 .vid-msg { color: var(--muted); font-size: 12.5px; }
 .vid-sub { margin-top: 12px; }
 .vid-sub > b { font-size: 13px; color: var(--text-2); }
+/* 【图表的颜色是算出来的，不是挑出来的】（2026-10-07）。
+   dataviz 的三项检查：OKLCH 亮度要落在带内、彩度不低于 0.10（低于此在小
+   尺寸上读成灰）、对比度不低于 3:1。
+
+   一开始想用 --tag-forum-text（#1b4f80 / #9cc9f0），两个都没过：
+   前者 L=0.419 偏暗且 C=0.098 发灰，后者 L=0.818 太亮、C=0.073 更灰。
+   看着都挺好——这正是不能靠眼睛判断的地方。换成下面这两个：
+       浅色 #2563a8  L=0.496 C=0.127 对比 5.45:1
+       深色 #4d93d6  L=0.647 C=0.123 对比 4.90:1 */
+:root { --chart: #4d93d6; }
+:root[data-theme="light"] { --chart: #2563a8; }
+.c-chart { width: 100%; height: auto; margin-top: 8px; display: block; }
+.c-bar { fill: var(--chart); }
+/* 悬停时整根柱子亮一档。【不画描边】：描边是多出来的墨，而且会把 2px 的
+   底色缝吃掉——柱子之间就靠那条缝分开。 */
+.c-bar:hover { fill-opacity: .75; }
+/* 网格线退后，1px 实线。【不要虚线】：虚线是噪声，读起来像在表示什么。 */
+.c-grid { stroke: var(--border); stroke-width: 1; }
+.c-tick { fill: var(--muted); font-size: 10.5px; }
 .vid-spark { margin-top: 10px; display: flex; align-items: flex-end; gap: 3px;
              height: 40px; }
 .vid-spark i { flex: 1; background: var(--ok-line); border-radius: 2px 2px 0 0;
@@ -687,6 +706,91 @@ def _refresh_video_if_stale(store, config):
     return True
 
 
+def _daily_chart(rows):
+    """最近若干天的每日观看量。
+
+    【为什么是柱不是线】：线会在两天之间画出连接，暗示中间有过渡——
+    而"某天 4 次观看"是一个离散的计数，两天之间没有中间值。
+
+    【为什么不用图表库】：这个工具没有任何外部依赖，整个程序就是几个
+    标准库脚本加一个内嵌的 Python。为一张条形图引入 CDN，等于让这一页
+    在断网时变成半张。SVG 本来就画得了。
+
+    规格照 dataviz 的要求：柱子最宽 24px、顶端 4px 圆角而底端是方的
+    （它从基线长出来）、相邻柱之间留 2px 的底色缝、网格线是 1px 实线且退后、
+    单序列不要图例（标题已经说了画的是什么）、不给每根柱子标数字。
+    """
+    if not rows:
+        return ""
+
+    W, H = 760, 132          # H 含下面那条日期带，不能只给绘图区
+    PAD_L, PAD_R, PAD_T, PAD_B = 34, 8, 10, 22
+    plot_w = W - PAD_L - PAD_R
+    plot_h = H - PAD_T - PAD_B
+
+    peak = max(r["views"] for r in rows) or 1
+    # 【刻度取整到好读的数】。1、2、5 的倍数——"最多 7 次"比"最多 6.4 次"
+    # 容易记，而这根轴的全部作用就是让人心算出柱子的量级。
+    import math
+    step = 10 ** math.floor(math.log10(peak)) if peak else 1
+    for mult in (1, 2, 5, 10):
+        if step * mult >= peak:
+            top = step * mult
+            break
+    else:
+        top = peak
+
+    n = len(rows)
+    band = plot_w / float(n)
+    bar_w = min(24.0, max(3.0, band - 2.0))   # 2px 底色缝
+
+    bars, ticks = [], []
+    for i, r in enumerate(rows):
+        x = PAD_L + i * band + (band - bar_w) / 2.0
+        if r["views"] <= 0:
+            continue
+        h = plot_h * r["views"] / float(top)
+        h = max(h, 2.0)                        # 有量就看得见
+        y = PAD_T + plot_h - h
+        radius = min(4.0, bar_w / 2.0, h)
+        # 顶端圆角、底端方的：路径从左下起，沿左边上去，顶上拐两个角，再下来。
+        d = ("M%.1f %.1f V%.1f Q%.1f %.1f %.1f %.1f H%.1f Q%.1f %.1f %.1f %.1f V%.1f Z"
+             % (x, PAD_T + plot_h,
+                y + radius,
+                x, y, x + radius, y,
+                x + bar_w - radius,
+                x + bar_w, y, x + bar_w, y + radius,
+                PAD_T + plot_h))
+        bars.append(
+            f'<path class="c-bar" d="{d}"><title>{_esc(r["day"])}'
+            f'&#10;{r["views"]} 次观看</title></path>')
+
+    # 网格：0 和顶端两条就够，中间再加一条
+    for frac in (0.0, 0.5, 1.0):
+        y = PAD_T + plot_h - plot_h * frac
+        value = int(round(top * frac))
+        ticks.append(f'<line class="c-grid" x1="{PAD_L}" y1="{y:.1f}" '
+                     f'x2="{W - PAD_R}" y2="{y:.1f}"></line>')
+        ticks.append(f'<text class="c-tick" x="{PAD_L - 6}" y="{y + 3.5:.1f}" '
+                     f'text-anchor="end">{value}</text>')
+
+    # 【只标两头的日期】。三十个日期全标会糊成一条灰带，而读者要的是
+    # "这一段是从哪天到哪天"，中间某一天具体是几号由悬停去回答。
+    first, last = rows[0]["day"][5:], rows[-1]["day"][5:]
+    ticks.append(f'<text class="c-tick" x="{PAD_L}" y="{H - 6}">{_esc(first)}</text>')
+    ticks.append(f'<text class="c-tick" x="{W - PAD_R}" y="{H - 6}" '
+                 f'text-anchor="end">{_esc(last)}</text>')
+
+    total = sum(r["views"] for r in rows)
+    return (f'<div class="vid-sub"><b>每天多少人看</b>'
+            f'<div class="watch-when">这 {len(rows)} 天共 {total:,} 次'
+            f'　·　把鼠标放到柱子上看具体哪天</div>'
+            f'<svg class="c-chart" viewBox="0 0 {W} {H}" '
+            f'role="img" aria-label="最近 {len(rows)} 天每日观看量，共 {total} 次，'
+            f'单日最多 {peak} 次">'
+            f'{"".join(ticks)}{"".join(bars)}</svg></div>')
+
+
 def _render_analytics(store, config):
     """频道主数据。【和上面那块分开写】：上面是接近实时的公开数字，这里滞后
     24-48 小时。并排显示同一个"观看数"而不说明口径，人会以为哪边算错了。"""
@@ -737,6 +841,8 @@ def _render_analytics(store, config):
             return (f'<div class="vid-sub"><b>{_esc(title)}</b>'
                     f'<div class="watch-grid">{body}</div></div>')
 
+        chart = _daily_chart(item.get("daily") or [])
+
         lists = (
             _list("流量来源", item["traffic"], "还没有数据"),
             # 【搜索词单独说明为什么可能是空的】：片子新、或者还没人靠搜索
@@ -750,10 +856,9 @@ def _render_analytics(store, config):
             f'<div class="watch-head">频道主数据'
             f'<button type="button" class="act mini" id="an-refresh">Refresh</button>'
             f'<span class="vid-msg" id="an-msg"></span></div>'
-            f'<div class="watch-when">上次更新 {stamp}'
-            f'　·　这一档滞后 24–48 小时，和上面那块的数字对不上是正常的</div>'
+            f'<div class="watch-when">上次更新 {stamp}</div>'
             f'<div class="watch-grid">{detail}</div>'
-            f'{"".join(lists)}</div>')
+            f'{chart}{"".join(lists)}</div>')
 
     return "".join(blocks)
 
@@ -820,14 +925,13 @@ def _render_video(store, config):
             f'<div class="watch-kv"><span>{_esc(k)}</span><b>{_esc(v)}</b></div>'
             for k, v in rows)
 
+        # 【日增量的小柱图撤掉了】（2026-10-07）。它是拿 video_stats 相邻两天的
+        # 累计数相减算出来的，而那【要求每天都来取一次】：隔三天没点，
+        # 那三天的量会全部算到第三天头上——图看着正常，读出来是错的。
+        #
+        # 真正的逐日数据现在从 Analytics 一次取回整段（见下面那张图），
+        # 而且是回溯的，不需要每天刷新。这一块只留"总数"那几个即时数字。
         spark = ""
-        if len(item["deltas"]) >= 2:
-            peak = max(d["views"] for d in item["deltas"]) or 1
-            bars = "".join(
-                f'<i style="height:{max(2, round(100.0 * d["views"] / peak))}%" '
-                f'title="{_esc(d["day"])}：{d["views"]:,}"></i>'
-                for d in item["deltas"])
-            spark = f'<div class="vid-spark">{bars}</div>'
 
         # 【按钮长在自己那块的标题上】：两个按钮都叫 Refresh，靠位置区分
         # 它刷的是哪一块——挤在页面底下的话，光看名字分不出来。

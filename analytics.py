@@ -9,8 +9,12 @@
                 地理），要 OAuth 授权，**有 24-48 小时延迟**。
 
 【两边的观看数对不上是正常的】。Data API 给的是接近实时的累计数，Analytics
-这边要等一两天才补齐。页面上把两个数并排显示过，人会以为哪边错了——所以
-分开两块写，各自标明口径。
+这边要等几天才补齐，所以分开两块写。
+
+【实测的延迟比官方说的长】：官方口径是 24-48 小时，2026-10-07 实测是
+【3 天】——Data API 当时已经报 11 次，而 Analytics 的逐日序列只到 10-04。
+新频道、数据量小的时候更慢。这个数记在这儿是为了下次别又去查一遍，
+页面上不写（运营者 2026-10-07 定：他知道这件事，那句话对他是噪声）。
 
 ===========================================================================
 【最值钱的是搜索词，不是观看数】
@@ -167,6 +171,17 @@ def fetch(store, config, video_id):
         breakdowns.append(("country", str(row[0]), int(row[1] or 0)))
 
     store.save_video_breakdown(video_id, breakdowns, now)
+
+    # 3) 逐日观看量。【一次请求拿回整段，而且是回溯的】——所以不需要每天
+    #    去点刷新。这正是它比 video_stats 那套日增量强的地方：那套要求
+    #    每天都取，隔几天没点就会把几天的量堆到一天上。
+    data = _report(config, dict(
+        base, dimensions="day", metrics="views,estimatedMinutesWatched",
+        filters=f"video=={video_id}", sort="day"))
+    store.save_video_daily(video_id, [
+        (str(row[0]), int(row[1] or 0), int(row[2] or 0))
+        for row in (data.get("rows") or [])])
+
     return True
 
 
@@ -227,4 +242,5 @@ def status(store, config, video_id):
         for i in groups.get("traffic", [])]
     out["search"] = groups.get("search", [])
     out["country"] = groups.get("country", [])
+    out["daily"] = store.video_daily(video_id)
     return out

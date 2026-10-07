@@ -78,6 +78,22 @@ CREATE TABLE IF NOT EXISTS video_breakdown (
     fetched_at INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (video_id, kind, label)
 );
+-- 【每日观看量】：Analytics 的 dimensions=day，一次请求就把整段取回来。
+--
+-- 【这和 video_stats 的日增量不是一回事，后者已经不用来画图了】。
+-- video_stats 存的是 Data API 的累计数，日增量靠相邻两行相减——而那要求
+-- 【每天都去取一次】：隔三天没点，那三天的量会全算到第三天头上，图是错的。
+-- Analytics 这边是回溯的：今天点一次，拿到的就是完整的 30 天逐日数据。
+--
+-- 整段替换，不增量更新：Analytics 会在一两天内回填修正（刷量清理等），
+-- 只追加新行的话，旧行会永远停在第一次取到的那个值上。
+CREATE TABLE IF NOT EXISTS video_daily (
+    video_id TEXT NOT NULL,
+    day      TEXT NOT NULL,          -- YYYY-MM-DD
+    views    INTEGER NOT NULL DEFAULT 0,
+    minutes  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (video_id, day)
+);
 CREATE INDEX IF NOT EXISTS posts_posted   ON posts (posted_at DESC);
 """
 
@@ -209,6 +225,26 @@ class Store:
             rows = self.db.execute(
                 "SELECT kind, label, views FROM video_breakdown"
                 " WHERE video_id = ? ORDER BY kind, views DESC",
+                (video_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def save_video_daily(self, video_id, rows):
+        """【先删后插】：Analytics 会回填修正，只 upsert 的话掉出窗口的旧行
+        会永远留在表里，而页面上看不出它们已经不在这一段里了。"""
+        with self.lock:
+            self.db.execute("DELETE FROM video_daily WHERE video_id = ?",
+                            (video_id,))
+            self.db.executemany(
+                "INSERT INTO video_daily (video_id, day, views, minutes)"
+                " VALUES (?,?,?,?)",
+                [(video_id, day, views, minutes) for day, views, minutes in rows])
+            self.db.commit()
+
+    def video_daily(self, video_id):
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT day, views, minutes FROM video_daily"
+                " WHERE video_id = ? ORDER BY day",
                 (video_id,)).fetchall()
         return [dict(r) for r in rows]
 
