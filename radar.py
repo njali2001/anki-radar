@@ -1373,11 +1373,13 @@ def main():
             return
 
         if args.serve:
-            # 【启动时先扫一遍论坛】：它几十秒就完事，人打开页面时就已经有东西看了。
-            # Reddit 不自动扫——那要四五分钟，该不该花这个时间由人决定。
+            # 【启动时谁都不扫，等人按按钮】（2026-10-07 运营者定）。
+            # 原来论坛那一轮是自动跑的，理由是"几十秒就完事，打开页面就有东西看"。
+            # 实际用下来不对：每次开这个工具都要往论坛发一轮请求，而多数时候
+            # 开它是为了看别的（配置、YouTube 那块、信标），根本没打算扫。
+            # 扫不扫、什么时候扫，由人决定——和 Reddit 一直以来的做法一致。
             ui.serve(store, config, scan_source, render_page,
-                     port=args.port, open_browser=not args.no_open,
-                     warm_source="ankiforum")
+                     port=args.port, open_browser=not args.no_open)
             return
 
         if args.reconsider:
