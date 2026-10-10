@@ -889,13 +889,12 @@ def _render_video(store, config):
                '频道主数据还没授权，跑一次 <code>oauth.py</code> 才有'
                '观看时长和看完比例。'))
 
+    # 【表头上只放取公开数字那个按钮】（2026-10-10 运营者要的）：频道主数据
+    # 那个挪到下面它自己那一块去。两个按钮并排挂在表头上，没法从位置看出
+    # 谁刷的是哪一拨数——而这张表里本来就混着两个来源。
     act = ('<button type="button" class="act mini" id="vid-refresh"'
            ' title="取这一节里所有片子的公开数字">Refresh</button>'
            '<span class="vid-msg" id="vid-msg"></span>')
-    if has_an:
-        act += ('<button type="button" class="act mini" id="an-refresh"'
-                ' title="取频道主数据（四次请求，几秒）">Refresh 频道主数据</button>'
-                '<span class="vid-msg" id="an-msg"></span>')
 
     out = (f'<div class="watch"><div class="watch-head">我们的片子{act}</div>'
            f'<table class="vidtab"><thead><tr>{head}</tr></thead>'
@@ -904,7 +903,16 @@ def _render_video(store, config):
 
     # 【不定长的那几样留在表下面】，按片子分块：流量来源、搜索词、
     # 观众在哪儿、日线图。塞进表格会把行撑得老高，而且列数会随数据变。
+    #
+    # 【「Refresh 频道主数据」就挂在这几块的第一块上】：它取的正是这几块的
+    # 内容，挂在这里，按钮和它刷的东西是挨着的。
+    # 【只挂一个】：/config/analytics-refresh 一次取全部片子，不收片子 id；
+    # 而且 id 重复的话 getElementById 只认第一个，后面那些点了没反应。
+    an_act = ('<button type="button" class="act mini" id="an-refresh"'
+              ' title="取全部片子的频道主数据（四次请求，几秒）">Refresh</button>'
+              '<span class="vid-msg" id="an-msg"></span>')
     if has_an:
+        blocks = 0
         for item in items:
             a = ana.get(item["id"]) or {}
             if a.get("empty") is not False:
@@ -912,6 +920,7 @@ def _render_video(store, config):
             if not (a.get("traffic") or a.get("search") or a.get("country")
                     or a.get("daily")):
                 continue
+            blocks += 1
             stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(a["fetched_at"]))
 
             def _list(title, rows, empty_hint):
@@ -925,8 +934,9 @@ def _render_video(store, config):
                         f'<div class="watch-grid">{inner}</div></div>')
 
             out += (f'<div class="watch">'
-                    f'<div class="watch-head">{_esc(item["label"])} · 最近 '
-                    f'{a["window_days"]} 天</div>'
+                    f'<div class="watch-head">频道主数据 · {_esc(item["label"])}'
+                    f'<span class="an"> · 最近 {a["window_days"]} 天</span>'
+                    f'{an_act if blocks == 1 else ""}</div>'
                     f'<div class="watch-when">上次更新 {stamp}</div>'
                     + _daily_chart(a.get("daily") or [])
                     + _list("流量来源", a["traffic"], "还没有数据")
@@ -936,6 +946,14 @@ def _render_video(store, config):
                             "还没有人通过搜索找到这条片子")
                     + _list("观众在哪儿", a["country"], "还没有数据")
                     + '</div>')
+        # 【一块都没渲染出来时，按钮要有个落脚处】：还没取过数的时候上面
+        # 那个循环一块都不出，按钮跟着没了，于是永远取不了第一次。
+        if blocks == 0:
+            out += (f'<div class="watch">'
+                    f'<div class="watch-head">频道主数据{an_act}</div>'
+                    f'<div class="watch-when">还没取过。点右上角的 Refresh——'
+                    f'观看时长、平均看完、流量来源、搜索词都在这里面。</div>'
+                    f'</div>')
     return out
 
 
