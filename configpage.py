@@ -805,17 +805,28 @@ def _render_analytics(store, config):
                 '地理分布只有频道主看得到，要跑一次 <code>oauth.py</code>——'
                 '步骤写在那个文件顶上。</div></div>')
 
+    # 【标题上必须带片名】（2026-10-10 运营者看出来的）：这个循环是按片子走的，
+    # 盯一条的时候只出一块，标题写死"频道主数据"看不出问题；加到两条之后，
+    # 页面上就是两块一模一样的标题，谁也不知道哪块是哪条片子。
+    #
+    # 【Refresh 只长在第一块上】：/config/analytics-refresh 这个接口是
+    # analytics.refresh_now(store, config)——它一次取【全部】片子，根本不收
+    # 片子 id。每块都放一个按钮，看着像"只刷这一条"，实际不是；更糟的是
+    # id="an-refresh" 会重复，而 getElementById 只认第一个，第二块那个按钮
+    # 点了没有任何反应。
     blocks = []
-    for t in video.targets(config):
+    for i, t in enumerate(video.targets(config)):
         item = analytics.status(store, config, t["id"])
         if item is None:
             continue
+        act = ('<button type="button" class="act mini" id="an-refresh"'
+               ' title="取这一节里所有片子的数">Refresh</button>'
+               '<span class="vid-msg" id="an-msg"></span>') if i == 0 else ''
+        label = _esc(t.get("label") or t["id"])
         if item.get("empty"):
             blocks.append(
                 '<div class="watch">'
-                '<div class="watch-head">频道主数据'
-                '<button type="button" class="act mini" id="an-refresh">Refresh</button>'
-                '<span class="vid-msg" id="an-msg"></span></div>'
+                f'<div class="watch-head">频道主数据 · {label}{act}</div>'
                 '<div class="watch-when">还没取过。点右上角的 Refresh。'
                 '</div></div>')
             continue
@@ -853,9 +864,7 @@ def _render_analytics(store, config):
         )
         blocks.append(
             f'<div class="watch">'
-            f'<div class="watch-head">频道主数据'
-            f'<button type="button" class="act mini" id="an-refresh">Refresh</button>'
-            f'<span class="vid-msg" id="an-msg"></span></div>'
+            f'<div class="watch-head">频道主数据 · {label}{act}</div>'
             f'<div class="watch-when">上次更新 {stamp}</div>'
             f'<div class="watch-grid">{detail}</div>'
             f'{chart}{"".join(lists)}</div>')
@@ -887,15 +896,18 @@ def _render_video(store, config):
     # 口径的说明只留在「频道主数据」那一块上——它才是会让人困惑的那个：
     # 滞后两天、而且数字比上面小。两块都写一遍反而啰嗦。
     cells = []
-    for item in items:
+    for i, item in enumerate(items):
         head = _esc(item["label"])
         url = f'https://youtu.be/{item["id"]}'
+        # 【Refresh 只长在第一块上】，理由同 _render_analytics：接口一次取
+        # 全部片子，而重复的 id 会让第二块那个按钮彻底失灵。
+        act = (f'<button type="button" class="act mini" id="vid-refresh"'
+               f' title="取这一节里所有片子的数">Refresh</button>'
+               f'<span class="vid-msg" id="vid-msg"></span>') if i == 0 else ''
         if item.get("empty"):
             cells.append(
                 f'<div class="watch">'
-                f'<div class="watch-head">{head}'
-                f'<button type="button" class="act mini" id="vid-refresh">Refresh</button>'
-                f'<span class="vid-msg" id="vid-msg"></span></div>'
+                f'<div class="watch-head">{head}{act}</div>'
                 f'<a class="watch-line" href="{_esc(url)}" target="_blank" '
                 f'rel="noopener">{_esc(url)}</a>'
                 f'<div class="watch-when">还没取过数，下次刷新这一页就会取。</div>'
@@ -933,13 +945,11 @@ def _render_video(store, config):
         # 而且是回溯的，不需要每天刷新。这一块只留"总数"那几个即时数字。
         spark = ""
 
-        # 【按钮长在自己那块的标题上】：两个按钮都叫 Refresh，靠位置区分
-        # 它刷的是哪一块——挤在页面底下的话，光看名字分不出来。
+        # 【按钮长在自己那一节的标题上】：两个 Refresh（这一节的、频道主数据
+        # 那一节的）靠位置区分刷的是哪一节——挤在页面底下的话分不出来。
         cells.append(
             f'<div class="watch">'
-            f'<div class="watch-head">{head}'
-            f'<button type="button" class="act mini" id="vid-refresh">Refresh</button>'
-            f'<span class="vid-msg" id="vid-msg"></span></div>'
+            f'<div class="watch-head">{head}{act}</div>'
             f'<a class="watch-line" href="{_esc(url)}" target="_blank" '
             f'rel="noopener">{_esc(_esc(item.get("title")) or url)}</a>'
             f'<div class="watch-when">{when}</div>'
