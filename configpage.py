@@ -800,9 +800,11 @@ def _daily_chart(rows):
                  f'text-anchor="end">{_esc(last)}</text>')
 
     total = sum(r["views"] for r in rows)
+    # 【图下面那行字去掉了】（2026-10-10 运营者要的）。总次数在上面的表里
+    # 已经有一列，而"把鼠标放到柱子上"是悬停就会发现的事——写出来等于
+    # 给一个本来就直观的东西配说明书。
+    # 【但 aria-label 留着】：读屏器看不见柱子，总数和峰值只能靠它。
     return (f'<div class="vid-sub"><b>每天多少人看</b>'
-            f'<div class="watch-when">这 {len(rows)} 天共 {total:,} 次'
-            f'　·　把鼠标放到柱子上看具体哪天</div>'
             f'<svg class="c-chart" viewBox="0 0 {W} {H}" '
             f'role="img" aria-label="最近 {len(rows)} 天每日观看量，共 {total} 次，'
             f'单日最多 {peak} 次">'
@@ -881,13 +883,13 @@ def _render_video(store, config):
                  f'rel="noopener">{_esc(item["label"])}</a></td>'
                  + "".join(cells) + '</tr>')
 
-    # 【口径写在脚注里，不写在每个格子旁边】：四个数来自两个接口，
-    # 不说明的话"总观看 18 / 30 天观看 11"看着像互相矛盾。
-    foot = ('前五列是公开接口的【累计】数字，接近实时；'
-            + ('后三列是频道主数据（Analytics），只算【最近 30 天】，'
-               '而且滞后 1–2 天。' if has_an else
-               '频道主数据还没授权，跑一次 <code>oauth.py</code> 才有'
-               '观看时长和看完比例。'))
+    # 【口径那行去掉了】（2026-10-10 运营者要的）：天天看这张表的人只有他一个，
+    # 而他已经知道哪几列来自哪个接口。
+    # 【但"还没授权"那句留着】：那是另一回事——没授权的时候后三列根本不在
+    # 表里，不说一句的话，看到的是一张少了三列的表，而没人知道少的是什么。
+    foot = ('' if has_an else
+            '频道主数据还没授权，跑一次 <code>oauth.py</code> 才有'
+            '观看时长和看完比例。')
 
     # 【表头上只放取公开数字那个按钮】（2026-10-10 运营者要的）：频道主数据
     # 那个挪到下面它自己那一块去。两个按钮并排挂在表头上，没法从位置看出
@@ -899,7 +901,8 @@ def _render_video(store, config):
     out = (f'<div class="watch"><div class="watch-head">我们的片子{act}</div>'
            f'<table class="vidtab"><thead><tr>{head}</tr></thead>'
            f'<tbody>{body}</tbody></table>'
-           f'<div class="watch-when">{foot}</div></div>')
+           + (f'<div class="watch-when">{foot}</div>' if foot else '')
+           + '</div>')
 
     # 【不定长的那几样留在表下面】，按片子分块：流量来源、搜索词、
     # 观众在哪儿、日线图。塞进表格会把行撑得老高，而且列数会随数据变。
