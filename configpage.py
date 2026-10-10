@@ -409,6 +409,24 @@ CONFIG_STYLE = """
 /* 颜色现在由基础的 .act 管（radar.STYLE），这里只管位置和尺寸。 */
 .act.mini { margin-left: auto; padding: 3px 11px; font-size: 12.5px; }
 .vid-msg { color: var(--muted); font-size: 12.5px; }
+/* 【「我们的片子」那张表】（2026-10-10）。四块（两条片子 x 两个数据源）
+   合成一张，一行一条片子。
+   【数字右对齐 + tabular-nums】：等宽数字让个位数对齐，扫一眼就能比大小；
+   默认的比例数字里「1」窄「8」宽，两行数字对不齐，看着就费劲。
+   【不换行】：列窄的时候宁可横滚，也不要把 "1,234" 断成两行。 */
+.vidtab { width: 100%; border-collapse: collapse; margin-top: 10px;
+  font-size: 13px; }
+.vidtab th, .vidtab td { padding: 7px 10px; text-align: left;
+  border-bottom: 1px solid var(--border); vertical-align: baseline; }
+.vidtab thead th { color: var(--muted); font-weight: 600; font-size: 12px;
+  white-space: nowrap; }
+.vidtab tbody tr:last-child td { border-bottom: 0; }
+.vidtab td.n, .vidtab th.n { text-align: right; white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.vidtab td.nm a { color: var(--text); font-weight: 600; text-decoration: none; }
+.vidtab td.nm a:hover { text-decoration: underline; }
+/* 次要信息（单位、"/ 5 天"、"更新于"）：同一个格子里压暗，不抢数字。 */
+.vidtab .an { color: var(--muted); font-weight: 400; }
 .vid-sub { margin-top: 12px; }
 .vid-sub > b { font-size: 13px; color: var(--text-2); }
 /* 【图表的颜色是算出来的，不是挑出来的】（2026-10-07）。
@@ -791,98 +809,25 @@ def _daily_chart(rows):
             f'{"".join(ticks)}{"".join(bars)}</svg></div>')
 
 
-def _render_analytics(store, config):
-    """频道主数据。【和上面那块分开写】：上面是接近实时的公开数字，这里滞后
-    24-48 小时。并排显示同一个"观看数"而不说明口径，人会以为哪边算错了。"""
-    import time
-
-    import analytics
-    import video
-
-    if not analytics.configured(config):
-        return ('<div class="watch"><div class="watch-head">频道主数据</div>'
-                '<div class="watch-when">还没授权。观看时长、流量来源、搜索词、'
-                '地理分布只有频道主看得到，要跑一次 <code>oauth.py</code>——'
-                '步骤写在那个文件顶上。</div></div>')
-
-    # 【标题上必须带片名】（2026-10-10 运营者看出来的）：这个循环是按片子走的，
-    # 盯一条的时候只出一块，标题写死"频道主数据"看不出问题；加到两条之后，
-    # 页面上就是两块一模一样的标题，谁也不知道哪块是哪条片子。
-    #
-    # 【Refresh 只长在第一块上】：/config/analytics-refresh 这个接口是
-    # analytics.refresh_now(store, config)——它一次取【全部】片子，根本不收
-    # 片子 id。每块都放一个按钮，看着像"只刷这一条"，实际不是；更糟的是
-    # id="an-refresh" 会重复，而 getElementById 只认第一个，第二块那个按钮
-    # 点了没有任何反应。
-    blocks = []
-    for i, t in enumerate(video.targets(config)):
-        item = analytics.status(store, config, t["id"])
-        if item is None:
-            continue
-        act = ('<button type="button" class="act mini" id="an-refresh"'
-               ' title="取这一节里所有片子的数">Refresh</button>'
-               '<span class="vid-msg" id="an-msg"></span>') if i == 0 else ''
-        label = _esc(t.get("label") or t["id"])
-        if item.get("empty"):
-            blocks.append(
-                '<div class="watch">'
-                f'<div class="watch-head">频道主数据 · {label}{act}</div>'
-                '<div class="watch-when">还没取过。点右上角的 Refresh。'
-                '</div></div>')
-            continue
-
-        stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(item["fetched_at"]))
-        rows = [
-            (f'最近 {item["window_days"]} 天观看', f'{item["views"]:,}'),
-            ("观看总时长（分钟）", f'{item["minutes"]:,}'),
-            ("平均观看时长", f'{item["avg_duration"] // 60}:{item["avg_duration"] % 60:02d}'),
-            ("平均看完比例", f'{item["avg_percentage"]:.1f}%'),
-        ]
-        detail = "".join(
-            f'<div class="watch-kv"><span>{_esc(k)}</span><b>{_esc(v)}</b></div>'
-            for k, v in rows)
-
-        def _list(title, items, empty_hint):
-            if not items:
-                return (f'<div class="vid-sub"><b>{_esc(title)}</b>'
-                        f'<div class="watch-when">{_esc(empty_hint)}</div></div>')
-            body = "".join(
-                f'<div class="watch-kv"><span>{_esc(str(i["label"]))}</span>'
-                f'<b>{i["views"]:,}</b></div>' for i in items)
-            return (f'<div class="vid-sub"><b>{_esc(title)}</b>'
-                    f'<div class="watch-grid">{body}</div></div>')
-
-        chart = _daily_chart(item.get("daily") or [])
-
-        lists = (
-            _list("流量来源", item["traffic"], "还没有数据"),
-            # 【搜索词单独说明为什么可能是空的】：片子新、或者还没人靠搜索
-            # 找到它，这时候空着是对的，不是出错。
-            _list("搜索词（人搜什么找到的）", item["search"],
-                  "还没有人通过搜索找到这条片子"),
-            _list("观众在哪儿", item["country"], "还没有数据"),
-        )
-        blocks.append(
-            f'<div class="watch">'
-            f'<div class="watch-head">频道主数据 · {label}{act}</div>'
-            f'<div class="watch-when">上次更新 {stamp}</div>'
-            f'<div class="watch-grid">{detail}</div>'
-            f'{chart}{"".join(lists)}</div>')
-
-    return "".join(blocks)
-
-
 def _render_video(store, config):
-    """我们自己那条片子的数字。
+    """我们自己那几条片子，【一行一条、一张表】（2026-10-10 运营者选的方案 A）。
 
-    【和上面那块「官方口径」不一样】：那块看的是"变没变"，一年 364 天都是
-    "没变"；这块看的是【涨了多少】，所以显示的是日增量，不是"变了"。
+    【为什么从两节合成一张表】。原来是「我们的片子」和「频道主数据」两节，
+    每节每条片子一块——两条片子就是四块。它们来源不同（公开接口 / Analytics）、
+    口径不同（累计 / 最近 30 天）、延迟不同（接近实时 / 滞后 1-2 天），
+    摆成四块谁也不知道该信哪个，而且"同一个观看数两处不一样"看着像算错了。
+    一张表，口径写在表头和脚注上。
 
-    【没配 API key 就说清楚缺什么】。静默显示一块空面板，人会以为是没数据，
-    于是去等——而实际上是永远不会有数据。
+    【不显示 YouTube 上的标题】（运营者要的）：那一列只放配置里的 label。
+    标题是从接口取回来的，长、而且会变；真要看是哪条片子，点名字就跳过去了。
+    改名字在 config.json 的 video.videos[].label。
+
+    【下面那些清单和日线图不塞进表格】：流量来源、搜索词、观众在哪儿是
+    不定长的列表，塞进单元格会把行撑得老高。它们留在表下面，按片子分块。
     """
     import time
 
+    import analytics
     import video
 
     items = video.status(store, config)
@@ -893,70 +838,105 @@ def _render_video(store, config):
                 '<div class="watch-when">还没填 YouTube API key'
                 '（在上面「YouTube」那一栏），填了才会取数。</div></div>')
 
-    # 口径的说明只留在「频道主数据」那一块上——它才是会让人困惑的那个：
-    # 滞后两天、而且数字比上面小。两块都写一遍反而啰嗦。
-    cells = []
-    for i, item in enumerate(items):
-        head = _esc(item["label"])
-        url = f'https://youtu.be/{item["id"]}'
-        # 【Refresh 只长在第一块上】，理由同 _render_analytics：接口一次取
-        # 全部片子，而重复的 id 会让第二块那个按钮彻底失灵。
-        act = (f'<button type="button" class="act mini" id="vid-refresh"'
-               f' title="取这一节里所有片子的数">Refresh</button>'
-               f'<span class="vid-msg" id="vid-msg"></span>') if i == 0 else ''
-        if item.get("empty"):
-            cells.append(
-                f'<div class="watch">'
-                f'<div class="watch-head">{head}{act}</div>'
-                f'<a class="watch-line" href="{_esc(url)}" target="_blank" '
-                f'rel="noopener">{_esc(url)}</a>'
-                f'<div class="watch-when">还没取过数，下次刷新这一页就会取。</div>'
-                f'</div>')
-            continue
+    has_an = analytics.configured(config)
+    ana = {}
+    if has_an:
+        for t in video.targets(config):
+            ana[t["id"]] = analytics.status(store, config, t["id"]) or {}
 
-        # 【写精确到分钟的时刻，不只写"今天取过"】。这是会变的数字，
-        # "今天"跨度太大——早上八点取的和晚上八点取的，差了一整天的播放量。
-        stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(item["checked_at"]))
-        when = f'上次更新 {stamp}（{_ago(item["checked_at"])}）'
+    cols = ["片子", "总观看", "最近新增", "点赞", "评论"]
+    if has_an:
+        cols += ["30 天观看", "观看时长", "平均看完"]
+    cols += ["更新于"]
+    head = "".join('<th%s>%s</th>' % ("" if i == 0 else ' class="n"', _esc(c))
+                   for i, c in enumerate(cols))
+
+    body = ""
+    for item in items:
+        url = f'https://youtu.be/{item["id"]}'
+        if item.get("empty"):
+            body += (f'<tr><td class="nm"><a href="{_esc(url)}" target="_blank" '
+                     f'rel="noopener">{_esc(item["label"])}</a></td>'
+                     f'<td class="n an" colspan="{len(cols) - 1}">'
+                     f'还没取过数，点右上角 Refresh</td></tr>')
+            continue
         # 【攒够两天才谈增量】。只有一天数据时"本周 0 次"会被读成"没人看"，
         # 而实际是我们还不知道。
-        if item["week_days"] >= 1:
-            trend = (f'<div class="watch-kv"><span>最近 {item["week_days"]} 天新增</span>'
-                     f'<b>{item["week_views"]:,}</b></div>')
-        else:
-            trend = ('<div class="watch-kv"><span>最近新增</span>'
-                     '<b>还要再取一天才算得出</b></div>')
+        week = (f'{item["week_views"]:,}<span class="an"> / {item["week_days"]} 天</span>'
+                if item["week_days"] >= 1 else '<span class="an">还要再取一天</span>')
+        cells = [f'<td class="n">{item["views"]:,}</td>',
+                 f'<td class="n">{week}</td>',
+                 f'<td class="n">{item["likes"]:,}</td>',
+                 f'<td class="n">{item["comments"]:,}</td>']
+        if has_an:
+            a = ana.get(item["id"]) or {}
+            if a.get("empty") is False:
+                cells += [f'<td class="n">{a["views"]:,}</td>',
+                          f'<td class="n">{a["minutes"]:,}<span class="an"> 分</span></td>',
+                          f'<td class="n">{a["avg_percentage"]:.1f}%</td>']
+            else:
+                cells += ['<td class="n an">—</td>'] * 3
+        cells += [f'<td class="n an">{_ago(item["checked_at"])}</td>']
+        body += (f'<tr><td class="nm"><a href="{_esc(url)}" target="_blank" '
+                 f'rel="noopener">{_esc(item["label"])}</a></td>'
+                 + "".join(cells) + '</tr>')
 
-        rows = [
-            ("总观看", f'{item["views"]:,}'),
-            ("点赞", f'{item["likes"]:,}'),
-            ("评论", f'{item["comments"]:,}'),
-            ("攒了几天数据", str(item["days"])),
-        ]
-        detail = "".join(
-            f'<div class="watch-kv"><span>{_esc(k)}</span><b>{_esc(v)}</b></div>'
-            for k, v in rows)
+    # 【口径写在脚注里，不写在每个格子旁边】：四个数来自两个接口，
+    # 不说明的话"总观看 18 / 30 天观看 11"看着像互相矛盾。
+    foot = ('前五列是公开接口的【累计】数字，接近实时；'
+            + ('后三列是频道主数据（Analytics），只算【最近 30 天】，'
+               '而且滞后 1–2 天。' if has_an else
+               '频道主数据还没授权，跑一次 <code>oauth.py</code> 才有'
+               '观看时长和看完比例。'))
 
-        # 【日增量的小柱图撤掉了】（2026-10-07）。它是拿 video_stats 相邻两天的
-        # 累计数相减算出来的，而那【要求每天都来取一次】：隔三天没点，
-        # 那三天的量会全部算到第三天头上——图看着正常，读出来是错的。
-        #
-        # 真正的逐日数据现在从 Analytics 一次取回整段（见下面那张图），
-        # 而且是回溯的，不需要每天刷新。这一块只留"总数"那几个即时数字。
-        spark = ""
+    act = ('<button type="button" class="act mini" id="vid-refresh"'
+           ' title="取这一节里所有片子的公开数字">Refresh</button>'
+           '<span class="vid-msg" id="vid-msg"></span>')
+    if has_an:
+        act += ('<button type="button" class="act mini" id="an-refresh"'
+                ' title="取频道主数据（四次请求，几秒）">Refresh 频道主数据</button>'
+                '<span class="vid-msg" id="an-msg"></span>')
 
-        # 【按钮长在自己那一节的标题上】：两个 Refresh（这一节的、频道主数据
-        # 那一节的）靠位置区分刷的是哪一节——挤在页面底下的话分不出来。
-        cells.append(
-            f'<div class="watch">'
-            f'<div class="watch-head">{head}{act}</div>'
-            f'<a class="watch-line" href="{_esc(url)}" target="_blank" '
-            f'rel="noopener">{_esc(_esc(item.get("title")) or url)}</a>'
-            f'<div class="watch-when">{when}</div>'
-            f'<div class="watch-grid">{trend}{detail}</div>{spark}</div>')
+    out = (f'<div class="watch"><div class="watch-head">我们的片子{act}</div>'
+           f'<table class="vidtab"><thead><tr>{head}</tr></thead>'
+           f'<tbody>{body}</tbody></table>'
+           f'<div class="watch-when">{foot}</div></div>')
 
-    cells.append(_render_analytics(store, config))
-    return "".join(cells)
+    # 【不定长的那几样留在表下面】，按片子分块：流量来源、搜索词、
+    # 观众在哪儿、日线图。塞进表格会把行撑得老高，而且列数会随数据变。
+    if has_an:
+        for item in items:
+            a = ana.get(item["id"]) or {}
+            if a.get("empty") is not False:
+                continue
+            if not (a.get("traffic") or a.get("search") or a.get("country")
+                    or a.get("daily")):
+                continue
+            stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(a["fetched_at"]))
+
+            def _list(title, rows, empty_hint):
+                if not rows:
+                    return (f'<div class="vid-sub"><b>{_esc(title)}</b>'
+                            f'<div class="watch-when">{_esc(empty_hint)}</div></div>')
+                inner = "".join(
+                    f'<div class="watch-kv"><span>{_esc(str(r["label"]))}</span>'
+                    f'<b>{r["views"]:,}</b></div>' for r in rows)
+                return (f'<div class="vid-sub"><b>{_esc(title)}</b>'
+                        f'<div class="watch-grid">{inner}</div></div>')
+
+            out += (f'<div class="watch">'
+                    f'<div class="watch-head">{_esc(item["label"])} · 最近 '
+                    f'{a["window_days"]} 天</div>'
+                    f'<div class="watch-when">上次更新 {stamp}</div>'
+                    + _daily_chart(a.get("daily") or [])
+                    + _list("流量来源", a["traffic"], "还没有数据")
+                    # 【搜索词单独说明为什么可能是空的】：片子新、或者还没人靠
+                    # 搜索找到它，这时候空着是对的，不是出错。
+                    + _list("搜索词（人搜什么找到的）", a["search"],
+                            "还没有人通过搜索找到这条片子")
+                    + _list("观众在哪儿", a["country"], "还没有数据")
+                    + '</div>')
+    return out
 
 
 def render(store, config, message=None, errors=None, active=None, hold=None):
